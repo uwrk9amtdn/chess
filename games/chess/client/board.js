@@ -1,7 +1,7 @@
 // Draws a position and turns clicks and drags into moves. The grid is sized
 // from the variant, so any board width and height works.
 
-import { legalMoves, applyMove, squareName } from '/shared/engine.js';
+import { legalMoves, applyMove, squareName } from '../shared/engine.js';
 
 // The filled glyphs are used for every seat; CSS colours them per seat.
 // U+FE0E asks for the text form so platforms do not substitute emoji.

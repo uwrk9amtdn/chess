@@ -1,4 +1,5 @@
-// HTTP server for the static client plus the WebSocket endpoint for the lobby.
+// HTTP server for the site shell and each game's browser code, plus the
+// WebSocket endpoint for the lobby.
 
 import http from 'node:http';
 import path from 'node:path';
@@ -6,19 +7,33 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { Lobby } from './lobby.js';
+import { loadGames } from './games.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(root, 'public');
-const SHARED = path.join(root, 'shared');
+const GAMES = path.join(root, 'games');
+// The parts of a game folder a browser may fetch. Server code stays private.
+const GAME_FILE = /^\/games\/([^/]+)\/(?:(meta\.js)|(client|shared)\/(.+))$/;
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.mp3': 'audio/mpeg',
   '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
 };
 
-async function serveStatic(req, res) {
+// Maps a URL path to [directory it must stay inside, path within it].
+function locate(pathname, games, gamesDir) {
+  if (!pathname.startsWith('/games/')) return [PUBLIC, pathname === '/' ? 'index.html' : pathname.slice(1)];
+  const [, id, meta, folder, rest] = GAME_FILE.exec(pathname) || [];
+  if (!games.has(id)) return null;
+  return meta ? [path.join(gamesDir, id), meta] : [path.join(gamesDir, id, folder), rest];
+}
+
+async function serveStatic(req, res, games, gamesDir) {
   let pathname;
   try {
     pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
@@ -26,13 +41,10 @@ async function serveStatic(req, res) {
     res.writeHead(400).end();
     return;
   }
-  // shared/ holds the rules engine, which the browser imports as-is.
-  const [base, rel] = pathname.startsWith('/shared/')
-    ? [SHARED, pathname.slice('/shared/'.length)]
-    : [PUBLIC, pathname === '/' ? 'index.html' : pathname.slice(1)];
-  const file = path.join(base, rel);
-  if (!file.startsWith(base + path.sep)) {
-    res.writeHead(403).end();
+  const located = locate(pathname, games, gamesDir);
+  const file = located && path.join(...located);
+  if (!file || !file.startsWith(located[0] + path.sep)) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
     return;
   }
   try {
@@ -48,9 +60,10 @@ async function serveStatic(req, res) {
 }
 
 // Remaining options go to the Lobby. Port 0 picks a free port.
-export function startServer({ port = 9494, ...lobbyOptions } = {}) {
-  const lobby = new Lobby(lobbyOptions);
-  const server = http.createServer(serveStatic);
+export async function startServer({ port = 9494, gamesDir = GAMES, ...lobbyOptions } = {}) {
+  const games = await loadGames(gamesDir);
+  const lobby = new Lobby({ games, ...lobbyOptions });
+  const server = http.createServer((req, res) => serveStatic(req, res, games, gamesDir));
   const wss = new WebSocketServer({ server, maxPayload: 4096 });
   wss.on('connection', (ws) => lobby.connect(ws));
   return new Promise((resolve, reject) => {
@@ -69,5 +82,5 @@ export function startServer({ port = 9494, ...lobbyOptions } = {}) {
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const { port } = await startServer({ port: Number(process.env.PORT) || 9494 });
-  console.log(`Chess server running at http://localhost:${port}`);
+  console.log(`Game server running at http://localhost:${port}`);
 }

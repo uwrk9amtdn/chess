@@ -1,20 +1,25 @@
-// One game in progress: the authoritative position, the clocks and the result.
-// Players are addressed by seat; the lobby maps seats to connections.
+// One chess game in progress: the authoritative position, the clocks and the
+// result. Players are addressed by seat; the lobby maps seats to connections.
 
 import { randomUUID } from 'node:crypto';
 import {
   createGame, findMove, applyMove, status, toSan, seatToMove, teamOf, opposingTeam, inCheck, serialize,
 } from '../shared/engine.js';
+import { variants } from '../shared/variants.js';
 
-export class Game {
-  // `players` holds one name per seat. `onChange(game)` fires after anything
-  // the players should see, including the end of the game.
-  constructor({ variant, players, initialMs, incrementMs, onChange }) {
+export class ChessMatch {
+  // `players` holds one name per seat and `options` is what validateOptions
+  // returned. `onChange(match)` fires after anything the players should see,
+  // including the end of the game.
+  constructor({ players, options, onChange }) {
+    const variant = variants[options.variant];
+    const initialMs = Math.round(options.minutes * 60_000);
     this.id = randomUUID();
     this.variant = variant;
     this.players = players;
+    this.options = options;
     this.initialMs = initialMs;
-    this.incrementMs = incrementMs;
+    this.incrementMs = options.increment * 1000;
     this.onChange = onChange;
     this.state = createGame(variant);
     // Remaining time per clock as of `turnStartedAt`. Seats sharing a clock
@@ -63,6 +68,19 @@ export class Game {
     this.drawOffer = null;
     this.over = { reason, winner };
     this.onChange(this);
+  }
+
+  // The lobby forwards every message from a player here. Returns an error
+  // message for the player, or null.
+  handle(seat, action) {
+    switch (action.action) {
+      case 'move': return this.move(seat, action);
+      case 'resign': this.resign(seat); return null;
+      case 'offerDraw': this.offerDraw(seat); return null;
+      case 'acceptDraw': this.answerDraw(seat, true); return null;
+      case 'declineDraw': this.answerDraw(seat, false); return null;
+      default: return 'Unknown action';
+    }
   }
 
   // Returns an error message, or null when the move was played.
@@ -139,6 +157,7 @@ export class Game {
       variant: this.variant.id,
       players: this.players,
       you: seat,
+      options: this.options,
       state: serialize(this.state),
       clocks,
       running,

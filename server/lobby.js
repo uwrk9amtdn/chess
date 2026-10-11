@@ -1,21 +1,23 @@
-// Who is online, who is busy, and the invitations between them.
+// Who is online, who is busy, and the invitations between them. The lobby
+// knows nothing about any particular game: it asks the game to check an
+// invitation's options, to create a match, and forwards the players' actions.
 //
-// Client -> server: join, invite, cancel, accept, decline, move, resign,
-//                   offerDraw, acceptDraw, declineDraw
+// Client -> server: join, invite, cancel, accept, decline, action
 // Server -> client: joined, joinError, users, invite, inviteSent,
-//                   inviteClosed, game, error
+//                   inviteClosed, match, error
 
 import { randomUUID } from 'node:crypto';
-import { variants } from '../shared/variants.js';
-import { Game } from './game.js';
 
 const NAME = /^[\p{L}\p{N}_-]+( [\p{L}\p{N}_-]+)*$/u;
 const INVITE_TTL_MS = 30_000;
 
 export class Lobby {
-  // `minMinutes` and `graceMs` are options so tests can use short games.
-  constructor({ minMinutes = 1, maxMinutes = 60, maxIncrement = 30, graceMs = 30_000 } = {}) {
-    this.limits = { minMinutes, maxMinutes, maxIncrement };
+  // `games` is the Map from loadGames. `limits` holds per-game overrides
+  // passed to validateOptions, keyed by game id; with `graceMs` it lets tests
+  // run short games.
+  constructor({ games, limits = {}, graceMs = 30_000 }) {
+    this.games = games;
+    this.limits = limits;
     this.graceMs = graceMs;
     this.users = new Map(); // lower-cased name -> user
     this.invites = new Map(); // id -> invite
@@ -47,7 +49,11 @@ export class Lobby {
   }
 
   broadcastUsers() {
-    const users = [...this.users.values()].map((u) => ({ name: u.name, status: u.game ? 'busy' : 'idle' }));
+    const users = [...this.users.values()].map((u) => ({
+      name: u.name,
+      status: u.match ? 'busy' : 'idle',
+      game: u.match ? u.gameId : null,
+    }));
     for (const u of this.users.values()) this.send(u, { type: 'users', users });
   }
 
@@ -60,19 +66,11 @@ export class Lobby {
       case 'cancel': return this.answerInvite(user, msg.id, 'cancelled');
       case 'decline': return this.answerInvite(user, msg.id, 'declined');
       case 'accept': return this.accept(user, msg.id);
-    }
-    const game = user.game;
-    if (!game) return;
-    switch (msg.type) {
-      case 'move': {
-        const error = game.move(user.seat, msg);
+      case 'action': {
+        if (!user.match) return;
+        const error = user.match.handle(user.seat, msg);
         if (error) this.send(user, { type: 'error', message: error });
-        return;
       }
-      case 'resign': return game.resign(user.seat);
-      case 'offerDraw': return game.offerDraw(user.seat);
-      case 'acceptDraw': return game.answerDraw(user.seat, true);
-      case 'declineDraw': return game.answerDraw(user.seat, false);
     }
   }
 
@@ -99,14 +97,21 @@ export class Lobby {
       }
       clearTimeout(user.dropTimer);
     } else {
-      user = { name, key, token: randomUUID(), conn: null, game: null, seat: null, dropTimer: null };
+      user = { name, key, token: randomUUID(), conn: null, match: null, gameId: null, seat: null, dropTimer: null };
       this.users.set(key, user);
     }
     user.conn = conn;
     conn.user = user;
-    this.send(user, { type: 'joined', name: user.name, token: user.token });
+    this.send(user, {
+      type: 'joined',
+      name: user.name,
+      token: user.token,
+      games: [...this.games.values()].map((g) => g.meta),
+      // True when a match is about to be resent rather than started.
+      resumed: Boolean(user.match),
+    });
     this.broadcastUsers();
-    if (user.game) user.game.setConnected(user.seat, true);
+    if (user.match) user.match.setConnected(user.seat, true);
   }
 
   disconnect(conn) {
@@ -114,12 +119,13 @@ export class Lobby {
     if (!user) return;
     conn.user = null;
     user.conn = null;
-    if (!user.game) return this.removeUser(user);
-    // Mid-game: keep the seat for a while so a reload does not lose the game.
-    // The player's clock keeps running in the meantime.
-    user.game.setConnected(user.seat, false);
+    if (!user.match) return this.removeUser(user);
+    // Mid-match: keep the seat for a while so a reload does not lose the
+    // game. What the absence costs meanwhile (a running clock, say) is up to
+    // the game.
+    user.match.setConnected(user.seat, false);
     user.dropTimer = setTimeout(() => {
-      if (user.game) user.game.abandon(user.seat);
+      if (user.match) user.match.abandon(user.seat);
       else this.removeUser(user);
     }, this.graceMs);
     user.dropTimer.unref();
@@ -136,25 +142,25 @@ export class Lobby {
   invite(from, msg) {
     const fail = (message) => this.send(from, { type: 'error', message });
     const to = this.users.get(String(msg.to ?? '').toLowerCase());
-    const { minMinutes, maxMinutes, maxIncrement } = this.limits;
-    const { minutes, increment, variant = 'standard' } = msg;
+    const game = typeof msg.game === 'string' ? this.games.get(msg.game) : undefined;
+    if (!game) return fail('Unknown game.');
     if (!to || to === from) return fail('That player is not available.');
-    if (from.game) return fail('You are already in a game.');
-    if (to.game) return fail(`${to.name} is busy.`);
+    if (from.match) return fail('You are already in a game.');
+    if (to.match) return fail(`${to.name} is busy.`);
     if ([...this.invites.values()].some((i) => i.from === from)) {
       return fail('You already have an invitation waiting.');
     }
-    if (typeof minutes !== 'number' || !(minutes >= minMinutes && minutes <= maxMinutes) ||
-        !Number.isInteger(increment) || increment < 0 || increment > maxIncrement) {
-      return fail(`Choose ${minMinutes} to ${maxMinutes} minutes and 0 to ${maxIncrement} seconds increment.`);
-    }
-    if (!Object.hasOwn(variants, variant)) return fail('Unknown game type.');
-    const invite = { id: randomUUID(), from, to, minutes, increment, variant };
+    const requested = msg.options && typeof msg.options === 'object' ? msg.options : {};
+    const { options, error } = game.validateOptions(requested, this.limits[game.meta.id]);
+    if (error) return fail(error);
+
+    const invite = { id: randomUUID(), from, to, game, options };
     invite.timer = setTimeout(() => this.closeInvite(invite, 'expired'), INVITE_TTL_MS);
     invite.timer.unref();
     this.invites.set(invite.id, invite);
-    this.send(to, { type: 'invite', id: invite.id, from: from.name, minutes, increment, variant });
-    this.send(from, { type: 'inviteSent', id: invite.id, to: to.name, minutes, increment, variant });
+    const details = { id: invite.id, game: game.meta.id, options };
+    this.send(to, { type: 'invite', from: from.name, ...details });
+    this.send(from, { type: 'inviteSent', to: to.name, ...details });
   }
 
   closeInvite(invite, reason) {
@@ -182,40 +188,40 @@ export class Lobby {
     const invite = this.invites.get(id);
     if (!invite || invite.to !== user) return;
     const { from, to } = invite;
-    if (from.game || to.game) return this.closeInvite(invite, 'unavailable');
+    if (from.match || to.match) return this.closeInvite(invite, 'unavailable');
     this.closeInvite(invite, 'accepted');
     this.closeInvitesOf(from, 'unavailable');
     this.closeInvitesOf(to, 'unavailable');
-    this.startGame(Math.random() < 0.5 ? [from, to] : [to, from], invite);
+    this.startMatch(Math.random() < 0.5 ? [from, to] : [to, from], invite);
   }
 
   // `seated` lists the users in seat order.
-  startGame(seated, { variant, minutes, increment }) {
-    const game = new Game({
-      variant: variants[variant],
+  startMatch(seated, { game, options }) {
+    const match = game.createMatch({
       players: seated.map((u) => u.name),
-      initialMs: Math.round(minutes * 60_000),
-      incrementMs: increment * 1000,
-      onChange: (g) => this.gameChanged(g, seated),
+      options,
+      onChange: (m) => this.matchChanged(m, game, seated),
     });
     seated.forEach((u, seat) => {
-      u.game = game;
+      u.match = match;
+      u.gameId = game.meta.id;
       u.seat = seat;
     });
     this.broadcastUsers();
-    this.gameChanged(game, seated);
+    this.matchChanged(match, game, seated);
   }
 
-  gameChanged(game, seated) {
+  matchChanged(match, game, seated) {
     seated.forEach((u, seat) => {
-      if (u.game === game) this.send(u, { type: 'game', game: game.snapshot(seat) });
+      if (u.match === match) this.send(u, { type: 'match', game: game.meta.id, snapshot: match.snapshot(seat) });
     });
-    if (!game.over) return;
-    // The game is finished: everyone is free again, and anyone who never
+    if (!match.over) return;
+    // The match is finished: everyone is free again, and anyone who never
     // reconnected leaves the lobby.
-    const players = seated.filter((u) => u.game === game);
+    const players = seated.filter((u) => u.match === match);
     for (const u of players) {
-      u.game = null;
+      u.match = null;
+      u.gameId = null;
       u.seat = null;
     }
     for (const u of players) if (!u.conn) this.removeUser(u);

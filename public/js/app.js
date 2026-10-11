@@ -1,25 +1,27 @@
-// Lobby, invitations and the game screen. All game state comes from the
-// server as snapshots; this file only draws them and sends the player's intent.
+// The site shell: connection, user name, the shared player list, invitations,
+// the grid of games and the page that hosts whichever game is being played.
+// It knows nothing about any particular game; each one is loaded from
+// /games/<id>/client/index.js and driven through the contract in
+// games/README.md.
 
-import { variants } from '/shared/variants.js';
-import { deserialize, seatToMove, teamOf, kingSquares } from '/shared/engine.js';
-import { createBoard, glyph } from './board.js';
 import { play, isMuted, setMuted } from './sounds.js';
 
 const $ = (id) => document.getElementById(id);
-const SESSION_KEY = 'chess.session';
+const SESSION_KEY = 'games.session';
 const RECONNECT_MS = 1000;
 const TOAST_MS = 4000;
-const LOW_TIME_MS = 10_000;
 
 let ws = null;
 let me = null;
 let users = [];
-let game = null; // latest snapshot from the server
-let gameAt = 0; // performance.now() when it arrived, for ticking the clock
+let games = new Map(); // id -> meta, as sent by the server
+const clients = new Map(); // id -> the game's browser module
+let route = null; // id of the game page that is open, or null for the grid
+let match = null; // { game, snapshot }: the match being played or just finished
+let mounted = null; // { game, view }: the game screen currently on the page
+let resuming = false; // the next match message continues an old match
 let outgoing = null; // the invitation we sent, if any
 const incoming = new Map(); // id -> invitation
-let lowTimeWarned = null; // id of the game we already beeped for
 
 function el(tag, props = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
@@ -56,27 +58,15 @@ function saveSession(session) {
   }
 }
 
-const formatTimeControl = (minutes, increment) => `${minutes}+${increment}`;
-
-// "3+1" for standard chess, "3+1 Double 16x16" for anything else.
-function describeInvite({ minutes, increment, variant }) {
-  const time = formatTimeControl(minutes, increment);
-  return variant === 'standard' ? time : `${time} ${variants[variant].name}`;
-}
-
-function formatClock(ms) {
-  if (ms < LOW_TIME_MS) {
-    const tenths = Math.floor(ms / 100);
-    return `0:0${Math.floor(tenths / 10)}.${tenths % 10}`;
-  }
-  const seconds = Math.ceil(ms / 1000);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-}
+const playing = () => Boolean(match && !match.snapshot.over);
 
 // ---- connection ----
 
 function connect() {
   ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
+  // Messages are handled strictly in order, even though the first one waits
+  // for the games' code to load.
+  let queue = Promise.resolve();
   ws.onopen = () => {
     $('offline').hidden = true;
     const session = loadSession();
@@ -85,7 +75,7 @@ function connect() {
   };
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-    if (handlers[msg.type]) handlers[msg.type](msg);
+    if (handlers[msg.type]) queue = queue.then(() => handlers[msg.type](msg)).catch(console.error);
   };
   ws.onclose = () => {
     $('offline').hidden = false;
@@ -100,19 +90,22 @@ const INVITE_CLOSED = {
 };
 
 const handlers = {
-  joined(msg) {
+  async joined(msg) {
     me = msg.name;
     saveSession({ name: msg.name, token: msg.token });
     $('nameDialog').close();
     $('me').textContent = `Signed in as ${me}`;
-    // After a reconnect the server resends a game that is still running and
+    games = new Map(msg.games.map((g) => [g.id, g]));
+    await Promise.all(msg.games.map(async (g) => {
+      if (!clients.has(g.id)) clients.set(g.id, (await import(`/games/${g.id}/client/index.js`)).default);
+    }));
+    // After a reconnect the server resends a match that is still running and
     // has dropped every invitation, so start from a clean slate.
-    if (game && !game.over) game = null;
+    resuming = msg.resumed;
+    if (playing()) closeMatch();
     outgoing = null;
     incoming.clear();
-    renderGame();
-    renderInvites();
-    renderUsers();
+    applyRoute();
   },
   joinError(msg) {
     me = null;
@@ -121,8 +114,7 @@ const handlers = {
   },
   users(msg) {
     users = msg.users;
-    renderUsers();
-    renderActions();
+    render();
   },
   invite(msg) {
     incoming.set(msg.id, msg);
@@ -131,9 +123,7 @@ const handlers = {
   },
   inviteSent(msg) {
     outgoing = msg;
-    renderInvites();
-    renderUsers();
-    renderActions();
+    render();
   },
   inviteClosed(msg) {
     if (outgoing && outgoing.id === msg.id) {
@@ -141,49 +131,107 @@ const handlers = {
       outgoing = null;
     }
     incoming.delete(msg.id);
-    renderInvites();
-    renderUsers();
-    renderActions();
+    render();
   },
-  game(msg) {
-    announce(game, msg.game);
-    game = msg.game;
-    gameAt = performance.now();
-    renderGame();
-    renderUsers();
+  match(msg) {
+    const fresh = !match || match.snapshot.id !== msg.snapshot.id;
+    if (fresh && !resuming && !msg.snapshot.over) play('start');
+    resuming = false;
+    match = { game: msg.game, snapshot: msg.snapshot };
+    // A match takes over the page, wherever the player was.
+    if (route !== msg.game) {
+      route = msg.game;
+      location.hash = `#/${msg.game}`;
+    }
+    if (mounted && mounted.game !== match.game) unmount();
+    if (!mounted) mounted = { game: match.game, view: clients.get(match.game).mount($('matchHost'), ctx) };
+    mounted.view.update(match.snapshot);
+    render();
   },
   error(msg) {
     toast(msg.message);
-    // Puts the board back if a move we showed early was refused.
-    renderGame();
+    // Lets the game undo anything it showed before the server refused it.
+    if (mounted) mounted.view.update(match.snapshot);
   },
 };
 
-// Plays the sounds for whatever changed between two snapshots. A snapshot of
-// a game we were not showing (after a reconnect) is not treated as news.
-function announce(prev, next) {
-  const same = Boolean(prev && prev.id === next.id);
-  if (!same && !next.over && next.moves.length === 0) play('start');
-  if (same && next.moves.length > prev.moves.length) {
-    const san = next.moves[next.moves.length - 1];
-    play(/[+#]/.test(san) ? 'check' : san.includes('x') ? 'capture' : 'move');
+// What a game's screen gets from the platform.
+const ctx = {
+  send: (action) => send({ ...action, type: 'action' }),
+  play,
+  toast,
+};
+
+function unmount() {
+  mounted.view.destroy();
+  mounted = null;
+}
+
+function closeMatch() {
+  match = null;
+  if (mounted) unmount();
+}
+
+// ---- routing: "#/" is the grid, "#/<game id>" is that game's page ----
+
+function applyRoute() {
+  const id = location.hash.replace(/^#\/?/, '');
+  const next = games.has(id) ? id : null;
+  // A match in progress cannot be left by navigating; a finished one is put away.
+  if (playing() && next !== match.game) {
+    location.hash = `#/${match.game}`;
+    return;
   }
-  if (same && next.over && !prev.over) play('end', 0.3);
-  const offered = (g) => g.drawOffer !== null && g.drawOffer !== g.you;
-  if (offered(next) && !(same && offered(prev))) play('notify');
+  if (match && next !== match.game) closeMatch();
+  route = next;
+  render();
+}
+window.addEventListener('hashchange', applyRoute);
+
+function render() {
+  $('home').hidden = route !== null;
+  $('gamePage').hidden = route === null;
+  renderGrid();
+  renderUsers();
+  renderInvites();
+  if (route === null) return;
+  const meta = games.get(route);
+  $('gameTitle').textContent = meta.name;
+  $('gameDescription').textContent = meta.description;
+  $('gameHint').hidden = Boolean(match);
+  $('backLink').hidden = playing();
+  // Offered once a match is over; assumes the two-player games the lobby seats today.
+  const over = Boolean(match && match.snapshot.over);
+  $('afterGame').hidden = !over;
+  if (over) {
+    const rival = opponent();
+    const free = users.some((u) => u.name === rival && u.status === 'idle');
+    $('rematch').disabled = !free || Boolean(outgoing);
+  }
 }
 
-// ---- lobby ----
+const opponent = () => match.snapshot.players.find((_, seat) => seat !== match.snapshot.you);
 
-function renderSoundToggle() {
-  $('soundToggle').textContent = isMuted() ? 'Sound: off' : 'Sound: on';
-}
-$('soundToggle').addEventListener('click', () => {
-  setMuted(!isMuted());
-  renderSoundToggle();
-  play('move');
+$('rematch').addEventListener('click', () => {
+  send({ type: 'invite', to: opponent(), game: match.game, options: match.snapshot.options });
 });
-renderSoundToggle();
+$('closeMatch').addEventListener('click', () => {
+  closeMatch();
+  render();
+});
+
+function renderGrid() {
+  $('gameGrid').replaceChildren(...[...games.values()].map((g) => {
+    const active = users.filter((u) => u.game === g.id).length;
+    return el('a', { className: 'gameCard', href: `#/${g.id}` },
+      el('span', { className: 'gameIcon', textContent: g.icon || g.name[0] }),
+      el('strong', { textContent: g.name }),
+      el('span', { className: 'gameAbout', textContent: g.description }),
+      el('span', { className: 'gameMeta', textContent: `${g.players} players · ${active} playing now` }));
+  }));
+}
+
+// ---- name ----
 
 function showNameDialog(error = '') {
   $('nameError').textContent = error;
@@ -198,17 +246,20 @@ $('nameForm').addEventListener('submit', (e) => {
 // A name is required, so Escape must not dismiss the dialog.
 $('nameDialog').addEventListener('cancel', (e) => e.preventDefault());
 
-const playing = () => Boolean(game && !game.over);
+// ---- players and invitations ----
 
 function renderUsers() {
   const sorted = [...users].sort((a, b) => (b.name === me) - (a.name === me) || a.name.localeCompare(b.name));
   $('userCount').textContent = users.length;
   $('users').replaceChildren(...sorted.map((u) => {
+    let status = u.game && games.has(u.game) ? `${u.status} · ${games.get(u.game).name}` : u.status;
+    if (u.name === me) status = `you · ${status}`;
     const li = el('li', {},
       el('span', { className: `dot ${u.status}` }),
       el('span', { className: 'userName', textContent: u.name }),
-      el('span', { className: `userStatus ${u.status}`, textContent: u.name === me ? `you · ${u.status}` : u.status }));
-    if (u.name !== me && u.status === 'idle' && !playing() && !outgoing) {
+      el('span', { className: `userStatus ${u.status}`, textContent: status }));
+    // Invitations are for the game whose page is open.
+    if (route && u.name !== me && u.status === 'idle' && !playing() && !outgoing) {
       li.append(el('button', { textContent: 'Invite', onclick: () => openInvite(u.name) }));
     }
     return li;
@@ -216,197 +267,48 @@ function renderUsers() {
 }
 
 function openInvite(name) {
-  $('inviteTarget').textContent = name;
-  $('inviteDialog').dataset.to = name;
+  const game = route;
+  $('inviteTitle').textContent = `Challenge ${name} to ${games.get(game).name}`;
+  $('inviteForm').replaceChildren();
+  clients.get(game).inviteForm($('inviteForm'), (options) => {
+    send({ type: 'invite', to: name, game, options });
+    $('inviteDialog').close();
+  });
   $('inviteDialog').showModal();
 }
-
-function sendInvite(minutes, increment) {
-  send({ type: 'invite', to: $('inviteDialog').dataset.to, minutes, increment, variant: $('variantSelect').value });
-  $('inviteDialog').close();
-}
-
-$('presets').addEventListener('click', (e) => {
-  const button = e.target.closest('button');
-  if (button) sendInvite(Number(button.dataset.minutes), Number(button.dataset.increment));
-});
-$('customForm').addEventListener('submit', (e) => {
-  e.preventDefault();
-  sendInvite($('customMinutes').valueAsNumber, $('customIncrement').valueAsNumber);
-});
-$('variantSelect').replaceChildren(
-  ...Object.values(variants).map((v) => el('option', { value: v.id, textContent: v.name })));
 $('inviteCancel').addEventListener('click', () => $('inviteDialog').close());
+
+// "Chess (3+1)"
+function describeInvite({ game, options }) {
+  return `${games.get(game).name} (${clients.get(game).describeOptions(options)})`;
+}
 
 function renderInvites() {
   const cards = [];
   if (outgoing) {
     cards.push(el('div', { className: 'invite' },
-      el('p', { textContent: `Waiting for ${outgoing.to} (${describeInvite(outgoing)})…` }),
+      el('p', { textContent: `Waiting for ${outgoing.to}: ${describeInvite(outgoing)}…` }),
       el('button', { textContent: 'Cancel', onclick: () => send({ type: 'cancel', id: outgoing.id }) })));
   }
   for (const invite of incoming.values()) {
     cards.push(el('div', { className: 'invite' },
-      el('p', {}, el('strong', { textContent: invite.from }),
-        ` challenges you to a ${describeInvite(invite)} game.`),
+      el('p', {}, el('strong', { textContent: invite.from }), ` challenges you to ${describeInvite(invite)}.`),
       el('button', { className: 'primary', textContent: 'Accept', onclick: () => send({ type: 'accept', id: invite.id }) }),
       el('button', { textContent: 'Decline', onclick: () => send({ type: 'decline', id: invite.id }) })));
   }
   $('invites').replaceChildren(...cards);
 }
 
-// ---- game ----
+// ---- sound ----
 
-const board = createBoard($('board'), {
-  onMove: (move) => send({ type: 'move', ...move }),
-  choosePromotion,
+function renderSoundToggle() {
+  $('soundToggle').textContent = isMuted() ? 'Sound: off' : 'Sound: on';
+}
+$('soundToggle').addEventListener('click', () => {
+  setMuted(!isMuted());
+  renderSoundToggle();
+  play('move');
 });
-
-function choosePromotion(types, seat) {
-  const dialog = $('promotionDialog');
-  return new Promise((resolve) => {
-    let choice = null;
-    $('promotionChoices').replaceChildren(...types.map((type) => el('button', {
-      className: `piece seat${seat}`,
-      textContent: glyph(type),
-      onclick: () => {
-        choice = type;
-        dialog.close();
-      },
-    })));
-    dialog.addEventListener('close', () => resolve(choice), { once: true });
-    dialog.showModal();
-  });
-}
-
-// v1 is two players; the seat that is not ours sits at the top.
-const opponentSeat = () => game.players.findIndex((_, seat) => seat !== game.you);
-
-const DRAWS = {
-  stalemate: 'by stalemate',
-  repetition: 'by threefold repetition',
-  fifty: 'by the 50-move rule',
-  material: 'by insufficient material',
-  agreement: 'by agreement',
-  timeout: 'on time against a bare king',
-};
-const WINS = {
-  checkmate: 'by checkmate',
-  resign: 'by resignation',
-  timeout: 'on time',
-  abandoned: 'by abandonment',
-};
-
-function statusText(variant, mover) {
-  if (game.over) {
-    const { reason, winner } = game.over;
-    if (winner === null) return `Draw ${DRAWS[reason]}`;
-    return `${winner === teamOf(variant, game.you) ? 'You won' : 'You lost'} ${WINS[reason]}`;
-  }
-  if (game.drawOffer !== null && game.drawOffer !== game.you) return `${game.players[game.drawOffer]} offers a draw`;
-  const turn = mover === game.you ? 'Your move' : `Waiting for ${game.players[mover]}`;
-  return game.check ? `${turn} (check)` : turn;
-}
-
-function renderGame() {
-  $('game').hidden = !game;
-  $('lobbyHint').hidden = Boolean(game);
-  if (!game) return;
-  const variant = variants[game.variant];
-  const state = deserialize(game.state, variant);
-  const mover = seatToMove(state);
-  const live = !game.over;
-
-  board.update({
-    state,
-    seat: game.you,
-    lastMove: game.lastMove,
-    checked: game.check ? kingSquares(state, teamOf(variant, mover)) : [],
-    interactive: live && mover === game.you,
-  });
-
-  for (const [bar, seat] of [[$('topBar'), opponentSeat()], [$('bottomBar'), game.you]]) {
-    bar.querySelector('.swatch').className = `swatch seat${seat}`;
-    bar.querySelector('.name').textContent = game.players[seat] + (game.connected[seat] ? '' : ' (disconnected)');
-    bar.classList.toggle('active', live && mover === seat);
-    bar.dataset.clock = variant.seats[seat].clock;
-  }
-
-  $('timeControl').textContent =
-    `${variant.name} · ${formatTimeControl(game.initialMs / 60_000, game.incrementMs / 1000)}`;
-  $('status').textContent = statusText(variant, mover);
-  $('status').classList.toggle('over', !live);
-
-  // One row per round: a move for each seat in turn order.
-  const perRound = variant.turnOrder.length;
-  const rows = [];
-  for (let i = 0; i < game.moves.length; i += perRound) {
-    rows.push(el('li', {}, ...game.moves.slice(i, i + perRound).map((san) => el('span', { textContent: san }))));
-  }
-  $('moves').replaceChildren(...rows);
-  $('moves').scrollTop = $('moves').scrollHeight;
-
-  updateClocks();
-  renderActions();
-}
-
-// The server sends the clocks as of the snapshot; between snapshots the
-// running one is counted down locally.
-function updateClocks() {
-  if (!game) return;
-  const elapsed = performance.now() - gameAt;
-  for (const bar of [$('topBar'), $('bottomBar')]) {
-    const clock = Number(bar.dataset.clock);
-    const ms = Math.max(0, game.clocks[clock] - (game.running === clock ? elapsed : 0));
-    const node = bar.querySelector('.clock');
-    node.textContent = formatClock(ms);
-    node.classList.toggle('low', ms < LOW_TIME_MS && !game.over);
-  }
-  // One warning when our own clock first drops into the last seconds.
-  const mine = Number($('bottomBar').dataset.clock);
-  if (game.running === mine && lowTimeWarned !== game.id && game.clocks[mine] - elapsed < LOW_TIME_MS) {
-    lowTimeWarned = game.id;
-    play('lowTime');
-  }
-}
-setInterval(updateClocks, 100);
-
-function renderActions() {
-  const box = $('actions');
-  box.replaceChildren();
-  if (!game) return;
-  const button = (textContent, onclick, props = {}) => el('button', { textContent, onclick, ...props });
-
-  if (!game.over) {
-    if (game.drawOffer === null) box.append(button('Offer draw', () => send({ type: 'offerDraw' })));
-    else if (game.drawOffer === game.you) box.append(button('Draw offered', null, { disabled: true }));
-    else {
-      box.append(
-        button('Accept draw', () => send({ type: 'acceptDraw' }), { className: 'primary' }),
-        button('Decline', () => send({ type: 'declineDraw' })));
-    }
-    box.append(button('Resign', () => {
-      if (confirm('Resign this game?')) send({ type: 'resign' });
-    }, { className: 'danger' }));
-    return;
-  }
-
-  const opponent = game.players[opponentSeat()];
-  const free = users.some((u) => u.name === opponent && u.status === 'idle');
-  const rematch = () => send({
-    type: 'invite',
-    to: opponent,
-    variant: game.variant,
-    minutes: game.initialMs / 60_000,
-    increment: game.incrementMs / 1000,
-  });
-  box.append(
-    button('Rematch', rematch, { className: 'primary', disabled: !free || Boolean(outgoing) }),
-    button('Back to lobby', () => {
-      game = null;
-      renderGame();
-      renderUsers();
-    }));
-}
+renderSoundToggle();
 
 connect();

@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Chess</title>
+  <title>Game Room</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <aside id="sidebar">
-    <h1>Chess</h1>
+    <h1><a href="#/">Game Room</a></h1>
     <p id="me"></p>
     <h2>Players <span id="userCount"></span></h2>
     <ul id="users"></ul>
@@ -17,27 +17,26 @@
   </aside>
 
   <main>
-    <section id="lobbyHint">
-      <h2>No game yet</h2>
-      <p>Pick an idle player from the list and press Invite to challenge them.</p>
+    <section id="home">
+      <h2>Games</h2>
+      <div id="gameGrid"></div>
     </section>
 
-    <section id="game" hidden>
-      <div id="table">
-        <div class="playerBar" id="topBar">
-          <span class="swatch"></span><span class="name"></span><span class="clock"></span>
+    <section id="gamePage" hidden>
+      <header id="gameHeader">
+        <a href="#/" id="backLink">&larr; All games</a>
+        <h2 id="gameTitle"></h2>
+        <div id="afterGame" hidden>
+          <button id="rematch" class="primary">Rematch</button>
+          <button id="closeMatch">Close</button>
         </div>
-        <div id="board"></div>
-        <div class="playerBar" id="bottomBar">
-          <span class="swatch"></span><span class="name"></span><span class="clock"></span>
-        </div>
+      </header>
+      <div id="gameHint">
+        <p id="gameDescription"></p>
+        <p>Pick an idle player from the list and press Invite to challenge them.</p>
       </div>
-      <div id="panel">
-        <div id="timeControl"></div>
-        <div id="status"></div>
-        <ol id="moves"></ol>
-        <div id="actions"></div>
-      </div>
+      <!-- The game currently being played draws itself in here. -->
+      <div id="matchHost"></div>
     </section>
   </main>
 
@@ -52,29 +51,15 @@
       <h2>Choose a user name</h2>
       <input id="nameInput" maxlength="16" autocomplete="off" required>
       <p class="formError" id="nameError"></p>
-      <button class="primary">Enter lobby</button>
+      <button class="primary">Enter</button>
     </form>
   </dialog>
 
   <dialog id="inviteDialog">
-    <h2>Challenge <span id="inviteTarget"></span></h2>
-    <p class="hint">Minutes per player + seconds added after each move.</p>
-    <label id="variantField">Game <select id="variantSelect"></select></label>
-    <div id="presets">
-      <button data-minutes="1" data-increment="1">1+1</button>
-      <button data-minutes="3" data-increment="1">3+1</button>
-      <button data-minutes="5" data-increment="1">5+1</button>
-    </div>
-    <form id="customForm">
-      <label>Minutes <input id="customMinutes" type="number" min="1" max="60" value="10" required></label>
-      <label>Increment <input id="customIncrement" type="number" min="0" max="30" value="5" required></label>
-      <button>Send custom</button>
-    </form>
+    <h2 id="inviteTitle"></h2>
+    <!-- Filled in by the game being offered. -->
+    <div id="inviteForm"></div>
     <button id="inviteCancel">Cancel</button>
-  </dialog>
-
-  <dialog id="promotionDialog">
-    <div id="promotionChoices"></div>
   </dialog>
 
   <script type="module" src="/js/app.js"></script>
