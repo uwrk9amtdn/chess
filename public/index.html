@@ -34,6 +34,15 @@
       <div id="gameHint">
         <p id="gameDescription"></p>
         <p>Pick an idle player from the list and press Invite to challenge them.</p>
+        <h2>Games in progress</h2>
+        <p id="noLiveGames">No games are being played right now.</p>
+        <div id="liveGames" class="matchGrid"></div>
+        <p id="livePaused" class="hint" hidden></p>
+        <h2>Past games</h2>
+        <label id="onlyMineLabel"><input type="checkbox" id="onlyMine"> Only mine</label>
+        <p id="noPastGames">No games have been played yet.</p>
+        <div id="pastGames" class="matchGrid"></div>
+        <button id="morePast" hidden>Show more</button>
       </div>
       <!-- The game currently being played draws itself in here. -->
       <div id="matchHost"></div>

@@ -8,10 +8,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { Lobby } from './lobby.js';
 import { loadGames } from './games.js';
+import { Archive } from './archive.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(root, 'public');
 const GAMES = path.join(root, 'games');
+const DATA = path.join(root, 'data');
 // The parts of a game folder a browser may fetch. Server code stays private.
 const GAME_FILE = /^\/games\/([^/]+)\/(?:(meta\.js)|(client|shared)\/(.+))$/;
 const TYPES = {
@@ -59,10 +61,17 @@ async function serveStatic(req, res, games, gamesDir) {
   }
 }
 
-// Remaining options go to the Lobby. Port 0 picks a free port.
-export async function startServer({ port = 9494, gamesDir = GAMES, ...lobbyOptions } = {}) {
+// Finished matches are saved in `dataDir`; without one they are only kept
+// until the server stops. Remaining options go to the Lobby. Port 0 picks a
+// free port.
+export async function startServer({ port = 9494, gamesDir = GAMES, dataDir = null, ...lobbyOptions } = {}) {
   const games = await loadGames(gamesDir);
-  const lobby = new Lobby({ games, ...lobbyOptions });
+  const archive = new Archive({
+    dir: dataDir,
+    preview: (game, snapshot) => games.get(game)?.preview?.(snapshot) ?? null,
+  });
+  await archive.load([...games.keys()]);
+  const lobby = new Lobby({ games, archive, ...lobbyOptions });
   const server = http.createServer((req, res) => serveStatic(req, res, games, gamesDir));
   const wss = new WebSocketServer({ server, maxPayload: 4096 });
   wss.on('connection', (ws) => lobby.connect(ws));
@@ -81,6 +90,6 @@ export async function startServer({ port = 9494, gamesDir = GAMES, ...lobbyOptio
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { port } = await startServer({ port: Number(process.env.PORT) || 9494 });
+  const { port } = await startServer({ port: Number(process.env.PORT) || 9494, dataDir: process.env.DATA_DIR || DATA });
   console.log(`Game server running at http://localhost:${port}`);
 }

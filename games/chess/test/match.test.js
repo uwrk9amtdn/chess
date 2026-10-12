@@ -50,6 +50,16 @@ test('moves, turn order and the increment', () => {
   assert.equal(snap.running, 1);
   assert.ok(snap.clocks[0] > 180_000 && snap.clocks[0] <= 181_000);
   assert.deepEqual(snap.options, { variant: 'standard', minutes: 3, increment: 1 });
+  // The clocks as they stood after the move: white's with the increment, black's untouched.
+  assert.deepEqual(snap.clockHistory, [[snap.clocks[0], 180_000]]);
+  const thumb = chess.preview(match.snapshot(null));
+  assert.deepEqual([thumb.variant, thumb.pieces.length, thumb.pieces[28], thumb.pieces[12], thumb.pieces[60]],
+    ['standard', 64, 'p0', '', 'k1']);
+  assert.deepEqual([thumb.lastMove, thumb.checked], [{ from: 12, to: 28 }, []]);
+  // A spectator has no seat, and the players are told how many are watching.
+  assert.equal(match.snapshot(null).you, null);
+  match.setSpectators(2);
+  assert.equal(changes.at(-1).spectators, 2);
   match.handle(0, { action: 'resign' });
 });
 

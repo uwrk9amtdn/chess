@@ -21,6 +21,27 @@ function div(className) {
   return node;
 }
 
+// A small board that only shows a position, seen from the first seat's side.
+// `pieces` holds "q1" (type and seat) or "" per square.
+export function drawThumbnail(root, { variant, pieces, lastMove, checked }) {
+  const { width: w, height: h } = variant;
+  root.classList.add('chessThumb');
+  root.style.setProperty('--cols', w);
+  root.style.setProperty('--rows', h);
+  const squares = [];
+  for (let y = h - 1; y >= 0; y--) {
+    for (let x = 0; x < w; x++) {
+      const idx = y * w + x;
+      const sq = div(`sq ${(x + y) % 2 ? 'light' : 'dark'}`);
+      if (lastMove && (lastMove.from === idx || lastMove.to === idx)) sq.classList.add('last');
+      if (checked.includes(idx)) sq.classList.add('check');
+      if (pieces[idx]) sq.style.backgroundImage = `url("${pieceUrl(pieces[idx][0], Number(pieces[idx].slice(1)))}")`;
+      squares.push(sq);
+    }
+  }
+  root.replaceChildren(...squares);
+}
+
 // `onMove({ from, to, promotion })` is called when the player makes a move.
 // `choosePromotion(types, seat)` resolves to the chosen piece type, or null.
 export function createBoard(root, { onMove, choosePromotion }) {

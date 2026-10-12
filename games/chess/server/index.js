@@ -2,6 +2,7 @@
 
 import meta from '../meta.js';
 import { variants } from '../shared/variants.js';
+import { deserialize, kingSquares, seatToMove, teamOf } from '../shared/engine.js';
 import { ChessMatch } from './match.js';
 
 const DEFAULT_LIMITS = { minMinutes: 1, maxMinutes: 60, maxIncrement: 30 };
@@ -23,4 +24,17 @@ export default {
   },
 
   createMatch: (args) => new ChessMatch(args),
+
+  // A position small enough to send by the dozen: the pieces as "q1" (type
+  // and seat) or "" per square, the last move and any king in check.
+  preview(snapshot) {
+    const variant = variants[snapshot.variant];
+    const state = deserialize(snapshot.state, variant);
+    return {
+      variant: variant.id,
+      pieces: state.board.map((p) => (p ? p.type + p.seat : '')),
+      lastMove: snapshot.lastMove,
+      checked: snapshot.check ? kingSquares(state, teamOf(variant, seatToMove(state))) : [],
+    };
+  },
 };

@@ -30,9 +30,12 @@ export class ChessMatch {
     this.moves = [];
     // The same moves as { from, to, promotion }, so a client can replay them.
     this.played = [];
+    // What every clock showed after each move, for looking back at the game.
+    this.clockHistory = [];
     this.lastMove = null;
     this.drawOffer = null;
     this.connected = players.map(() => true);
+    this.spectators = 0;
     this.over = null;
     this.armFlag();
   }
@@ -102,6 +105,7 @@ export class ChessMatch {
     this.clocks[c] = left + this.incrementMs;
     this.moves.push(toSan(this.state, move));
     this.played.push({ from: move.from, to: move.to, promotion: move.promotion });
+    this.clockHistory.push(this.clocks.slice());
     this.state = applyMove(this.state, move);
     this.lastMove = { from: move.from, to: move.to };
     this.drawOffer = null;
@@ -147,7 +151,13 @@ export class ChessMatch {
     this.onChange(this);
   }
 
-  // Everything the player in `seat` needs to draw the game right now.
+  setSpectators(count) {
+    this.spectators = count;
+    this.onChange(this);
+  }
+
+  // Everything the player in `seat` needs to draw the game right now. A
+  // spectator (`seat` is null) sees the same; chess has no hidden information.
   snapshot(seat) {
     const clocks = this.clocks.slice();
     let running = null;
@@ -168,10 +178,12 @@ export class ChessMatch {
       incrementMs: this.incrementMs,
       moves: this.moves,
       played: this.played,
+      clockHistory: this.clockHistory,
       lastMove: this.lastMove,
       check: inCheck(this.state, teamOf(this.variant, seatToMove(this.state))),
       drawOffer: this.drawOffer,
       connected: this.connected,
+      spectators: this.spectators,
       over: this.over,
     };
   }

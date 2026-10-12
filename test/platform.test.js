@@ -5,6 +5,9 @@ import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
 import { startServer } from '../server/index.js';
 import { connect, statuses } from './helpers.js';
+import os from 'node:os';
+import path from 'node:path';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
 
 const gamesDir = fileURLToPath(new URL('./fixtures/games', import.meta.url));
 
@@ -167,6 +170,138 @@ test('the players of a match can chat, also after it is over', async (t) => {
   await new Promise((resolve) => setTimeout(resolve, 550));
   bob.send({ type: 'chat', text: 'gg' });
   assert.deepEqual(await alice.next('chat'), { type: 'chat', id, from: 'bob', text: 'gg' });
+});
+
+test('watching a match', async (t) => {
+  const server = await startServer({ port: 0, gamesDir });
+  t.after(() => server.close());
+  const [alice, bob, carol] = [connect(server.port), connect(server.port), connect(server.port)];
+  await Promise.all([alice.opened, bob.opened, carol.opened]);
+  for (const [client, name] of [[alice, 'alice'], [bob, 'bob'], [carol, 'carol']]) {
+    client.send({ type: 'join', name });
+    await client.next('joined');
+  }
+  assert.deepEqual((await carol.next('matches')).matches, []);
+  carol.send({ type: 'watch', id: 'nope' });
+  assert.match((await carol.next('error')).message, /no longer/);
+
+  alice.send({ type: 'invite', to: 'bob', game: 'pick', options: { prize: 2 } });
+  bob.send({ type: 'accept', id: (await bob.next('invite')).id });
+  const { id, you } = (await alice.next('match')).snapshot;
+  const [live] = (await carol.next('matches', (m) => m.matches.length === 1)).matches;
+  assert.deepEqual({ ...live, players: [...live.players].sort() },
+    { id, game: 'pick', players: ['alice', 'bob'], options: { prize: 2 }, preview: { claimed: false, pokes: 0 } });
+  // Following a game brings its list, then every preview as it changes.
+  carol.send({ type: 'follow', game: 'pick' });
+  assert.equal((await carol.next('matches')).matches[0].id, id);
+  alice.send({ type: 'action', action: 'poke' });
+  assert.deepEqual(await carol.next('preview'), { type: 'preview', id, preview: { claimed: false, pokes: 1 } });
+  carol.send({ type: 'unfollow' });
+
+  // A player cannot watch; anyone else gets the match without a seat.
+  alice.send({ type: 'watch', id });
+  assert.match((await alice.next('error')).message, /in a game/);
+  carol.send({ type: 'watch', id });
+  const seen = (await carol.next('match')).snapshot;
+  assert.deepEqual([seen.id, seen.you, seen.spectators], [id, null, 1]);
+  assert.equal((await alice.next('match', (m) => m.snapshot.spectators === 1)).snapshot.you, you);
+
+  // Nothing a spectator sends reaches the match or its chat.
+  carol.send({ type: 'action', action: 'claim' });
+  carol.send({ type: 'chat', text: 'psst' });
+  carol.send({ type: 'unwatch' });
+  assert.equal((await alice.next('match', (m) => m.snapshot.spectators === 0)).snapshot.over, null);
+
+  // Watching again; the end of the match reaches the spectator too.
+  carol.send({ type: 'watch', id });
+  await carol.next('match');
+  alice.send({ type: 'action', action: 'claim' });
+  assert.deepEqual((await carol.next('match', (m) => m.snapshot.over)).snapshot.over, { reason: 'claimed', winner: you });
+  assert.deepEqual((await carol.next('matches')).matches, []);
+});
+
+test('previews are not pushed while more than 12 matches are going', async (t) => {
+  const server = await startServer({ port: 0, gamesDir });
+  t.after(() => server.close());
+  const join = async (name) => {
+    const client = connect(server.port);
+    await client.opened;
+    client.send({ type: 'join', name });
+    await client.next('joined');
+    return client;
+  };
+  const watcher = await join('watcher');
+  const hosts = [];
+  for (let i = 0; i < 13; i++) {
+    const [host, guest] = [await join(`host${i}`), await join(`guest${i}`)];
+    host.send({ type: 'invite', to: `guest${i}`, game: 'pick' });
+    guest.send({ type: 'accept', id: (await guest.next('invite')).id });
+    await host.next('match');
+    hosts.push(host);
+  }
+  watcher.send({ type: 'follow', game: 'pick' });
+  await watcher.next('matches', (m) => m.matches.length === 13);
+
+  // Thirteen matches: a change is not sent. One ends, and the next change is.
+  hosts[0].send({ type: 'action', action: 'poke' });
+  hosts[12].send({ type: 'action', action: 'claim' });
+  await watcher.next('matches', (m) => m.matches.length === 12);
+  hosts[1].send({ type: 'action', action: 'poke' });
+  const { id, preview } = await watcher.next('preview');
+  assert.deepEqual(preview, { claimed: false, pokes: 1 });
+  const first = (await hosts[0].next('match')).snapshot.id;
+  assert.notEqual(id, first);
+});
+
+test('finished matches are kept and can be looked at again', async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), 'game-room-'));
+  t.after(() => rm(dataDir, { recursive: true }));
+  let server = await startServer({ port: 0, gamesDir, dataDir });
+  t.after(() => server.close());
+  const join = async (name) => {
+    const client = connect(server.port);
+    await client.opened;
+    client.send({ type: 'join', name });
+    await client.next('joined');
+    return client;
+  };
+  const alice = await join('alice');
+  const bob = await join('bob');
+
+  alice.send({ type: 'history', game: 'pick' });
+  assert.deepEqual(await alice.next('history'), { type: 'history', game: 'pick', before: null, games: [], more: false });
+
+  alice.send({ type: 'invite', to: 'bob', game: 'pick', options: { prize: 3 } });
+  bob.send({ type: 'accept', id: (await bob.next('invite')).id });
+  const { id, you } = (await alice.next('match')).snapshot;
+  // A match is not there to review until it is over, and never for a player.
+  alice.send({ type: 'review', id });
+  assert.match((await alice.next('error')).message, /in a game/);
+  alice.send({ type: 'action', action: 'claim' });
+  await alice.next('matches', (m) => m.matches.length === 0);
+
+  const check = async (client) => {
+    client.send({ type: 'history', game: 'pick', player: 'ALICE' });
+    const [saved] = (await client.next('history')).games;
+    assert.deepEqual({ ...saved, endedAt: 0, players: [...saved.players].sort() }, {
+      id, endedAt: 0, players: ['alice', 'bob'], options: { prize: 3 }, over: { reason: 'claimed', winner: you },
+      preview: { claimed: true, pokes: 0 }, seq: 0,
+    });
+    client.send({ type: 'history', game: 'pick', player: 'carol' });
+    assert.deepEqual((await client.next('history')).games, []);
+    client.send({ type: 'review', id });
+    const { snapshot } = await client.next('match');
+    assert.deepEqual([snapshot.id, snapshot.you, snapshot.over.winner], [id, null, you]);
+    client.send({ type: 'review', id: 'nope' });
+    assert.match((await client.next('error')).message, /not be found/);
+  };
+  await check(bob);
+
+  // The match is still there after the server has been restarted.
+  server.close();
+  assert.equal((await readFile(path.join(dataDir, 'pick.jsonl'), 'utf8')).trim().split('\n').length, 1);
+  server = await startServer({ port: 0, gamesDir, dataDir });
+  await check(await join('dave'));
 });
 
 test('only the browser parts of a game are served', async (t) => {

@@ -2,28 +2,36 @@
 // knows nothing about any particular game: it asks the game to check an
 // invitation's options, to create a match, and forwards the players' actions.
 //
-// Client -> server: join, invite, cancel, accept, decline, action, chat
-// Server -> client: joined, joinError, users, invite, inviteSent,
-//                   inviteClosed, match, chat, chatLog, error
+// Client -> server: join, invite, cancel, accept, decline, action, chat,
+//                   watch, unwatch, follow, unfollow, history, review
+// Server -> client: joined, joinError, users, matches, invite, inviteSent,
+//                   inviteClosed, match, preview, chat, chatLog, history, error
 
 import { randomUUID } from 'node:crypto';
+import { Archive } from './archive.js';
 
 const NAME = /^[\p{L}\p{N}_-]+( [\p{L}\p{N}_-]+)*$/u;
 const INVITE_TTL_MS = 30_000;
 const CHAT_MAX_LENGTH = 140;
 const CHAT_MIN_GAP_MS = 500;
 const CHAT_LOG_SIZE = 100;
+// Previews are pushed on every change only while a game has at most this many
+// matches going; beyond it they are refreshed when a match starts or ends.
+const PREVIEW_LIMIT = 12;
 
 export class Lobby {
-  // `games` is the Map from loadGames. `limits` holds per-game overrides
+  // `games` is the Map from loadGames and `archive` is where finished matches
+  // go. `limits` holds per-game overrides
   // passed to validateOptions, keyed by game id; with `graceMs` it lets tests
   // run short games.
-  constructor({ games, limits = {}, graceMs = 30_000 }) {
+  constructor({ games, archive = new Archive(), limits = {}, graceMs = 30_000 }) {
     this.games = games;
+    this.archive = archive;
     this.limits = limits;
     this.graceMs = graceMs;
     this.users = new Map(); // lower-cased name -> user
     this.invites = new Map(); // id -> invite
+    this.matches = new Map(); // id -> { match, game, seated, options, watchers } while it is played
   }
 
   connect(ws) {
@@ -60,6 +68,41 @@ export class Lobby {
     for (const u of this.users.values()) this.send(u, { type: 'users', users });
   }
 
+  // The matches anyone may watch, each with a preview of how it stands now
+  // if the game makes those.
+  liveMatches() {
+    return [...this.matches.values()].map((m) => ({
+      id: m.match.id,
+      game: m.game.meta.id,
+      players: m.seated.map((u) => u.name),
+      options: m.options,
+      preview: m.preview,
+    }));
+  }
+
+  // Works out a match's preview again and says whether it changed.
+  refreshPreview(live) {
+    const preview = live.game.preview?.(live.match.snapshot(null)) ?? null;
+    const changed = JSON.stringify(preview) !== JSON.stringify(live.preview);
+    live.preview = preview;
+    return changed;
+  }
+
+  // Someone looking at a game's list of matches follows that game: they get
+  // the list as it is now and then each match's preview as it changes.
+  follow(user, game) {
+    if (typeof game !== 'string' || !this.games.has(game)) return;
+    user.following = game;
+    for (const live of this.matches.values()) this.refreshPreview(live);
+    this.send(user, { type: 'matches', matches: this.liveMatches() });
+  }
+
+  broadcastMatches() {
+    for (const live of this.matches.values()) this.refreshPreview(live);
+    const matches = this.liveMatches();
+    for (const u of this.users.values()) this.send(u, { type: 'matches', matches });
+  }
+
   handle(conn, msg) {
     if (msg.type === 'join') return this.join(conn, msg);
     const user = conn.user;
@@ -70,6 +113,14 @@ export class Lobby {
       case 'decline': return this.answerInvite(user, msg.id, 'declined');
       case 'accept': return this.accept(user, msg.id);
       case 'chat': return this.chat(user, msg.text);
+      case 'watch': return this.watch(user, msg.id);
+      case 'unwatch': return this.stopWatching(user);
+      case 'follow': return this.follow(user, msg.game);
+      case 'unfollow': user.following = null; return;
+      case 'history': return this.history(user, msg);
+      case 'review':
+        this.review(user, msg.id).catch((err) => console.error('Error handling "review":', err));
+        return;
       case 'action': {
         if (!user.match) return;
         const error = user.match.handle(user.seat, msg);
@@ -103,7 +154,7 @@ export class Lobby {
     } else {
       user = {
         name, key, token: randomUUID(), conn: null, match: null, gameId: null, seat: null, dropTimer: null,
-        room: null, lastChatAt: 0,
+        room: null, lastChatAt: 0, watching: null, following: null,
       };
       this.users.set(key, user);
     }
@@ -114,10 +165,13 @@ export class Lobby {
       name: user.name,
       token: user.token,
       games: [...this.games.values()].map((g) => g.meta),
+      previewLimit: PREVIEW_LIMIT,
       // True when a match is about to be resent rather than started.
       resumed: Boolean(user.match),
     });
     this.broadcastUsers();
+    user.following = null;
+    this.send(user, { type: 'matches', matches: this.liveMatches() });
     if (user.room) this.send(user, { type: 'chatLog', id: user.room.id, messages: user.room.log });
     if (user.match) user.match.setConnected(user.seat, true);
   }
@@ -144,6 +198,7 @@ export class Lobby {
     if (this.users.get(user.key) !== user) return;
     this.users.delete(user.key);
     user.room = null;
+    this.stopWatching(user);
     this.closeInvitesOf(user, 'unavailable');
     this.broadcastUsers();
   }
@@ -214,14 +269,73 @@ export class Lobby {
     // The players of a match can talk to each other. The room outlives the
     // match, until its players move on to another one or leave.
     const room = { id: match.id, members: seated, log: [] };
+    const entry = { match, game, seated, options, watchers: new Set(), preview: null };
+    this.matches.set(match.id, entry);
+    this.refreshPreview(entry);
     seated.forEach((u, seat) => {
+      this.stopWatching(u);
       u.room = room;
       u.match = match;
       u.gameId = game.meta.id;
       u.seat = seat;
     });
     this.broadcastUsers();
+    this.broadcastMatches();
     this.matchChanged(match, game, seated);
+  }
+
+  // Anyone who is not playing may look on. A spectator has no seat: they get
+  // the snapshot for seat `null` and nothing they send reaches the match.
+  watch(user, id) {
+    if (user.match) return this.send(user, { type: 'error', message: 'You are in a game yourself.' });
+    const live = this.matches.get(id);
+    if (!live) return this.send(user, { type: 'error', message: 'That game is no longer being played.' });
+    if (user.watching !== live) {
+      this.stopWatching(user);
+      user.watching = live;
+      live.watchers.add(user);
+      // A game that counts its audience tells everyone, the newcomer included.
+      if (live.match.setSpectators) return live.match.setSpectators(live.watchers.size);
+    }
+    this.send(user, { type: 'match', game: live.game.meta.id, snapshot: live.match.snapshot(null) });
+  }
+
+  stopWatching(user) {
+    const live = user.watching;
+    if (!live) return;
+    user.watching = null;
+    live.watchers.delete(user);
+    live.match.setSpectators?.(live.watchers.size);
+  }
+
+  // A page of the finished matches of one game, newest first.
+  history(user, msg) {
+    if (typeof msg.game !== 'string' || !this.games.has(msg.game)) return;
+    const before = Number.isInteger(msg.before) ? msg.before : undefined;
+    const player = typeof msg.player === 'string' ? msg.player : undefined;
+    const page = this.archive.list(msg.game, { before, player });
+    this.send(user, { type: 'history', game: msg.game, before: before ?? null, ...page });
+  }
+
+  // A finished match is shown the way a spectator saw it end.
+  async review(user, id) {
+    const record = typeof id === 'string' ? await this.archive.get(id) : null;
+    if (user.match) return this.send(user, { type: 'error', message: 'You are in a game yourself.' });
+    if (!record) return this.send(user, { type: 'error', message: 'That game could not be found.' });
+    this.stopWatching(user);
+    this.send(user, { type: 'match', game: record.game, snapshot: record.snapshot });
+  }
+
+  // Tells the followers of a game what one of its matches looks like now,
+  // unless nothing visible changed or there are too many matches to keep up.
+  pushPreview(live) {
+    if (!live || !live.game.preview) return;
+    const id = live.game.meta.id;
+    let count = 0;
+    for (const m of this.matches.values()) if (m.game === live.game) count++;
+    if (count > PREVIEW_LIMIT || !this.refreshPreview(live)) return;
+    const msg = { type: 'preview', id: live.match.id, preview: live.preview };
+    for (const u of this.users.values()) if (u.following === id) this.send(u, msg);
   }
 
   chat(user, text) {
@@ -244,9 +358,30 @@ export class Lobby {
     seated.forEach((u, seat) => {
       if (u.match === match) this.send(u, { type: 'match', game: game.meta.id, snapshot: match.snapshot(seat) });
     });
-    if (!match.over) return;
+    const live = this.matches.get(match.id);
+    if (live) {
+      const msg = { type: 'match', game: game.meta.id, snapshot: match.snapshot(null) };
+      for (const u of live.watchers) this.send(u, msg);
+    }
+    if (!match.over) {
+      this.pushPreview(live);
+      return;
+    }
     // The match is finished: everyone is free again, and anyone who never
-    // reconnected leaves the lobby.
+    // reconnected leaves the lobby. Spectators keep the last thing they saw.
+    if (live) {
+      for (const u of live.watchers) u.watching = null;
+      this.matches.delete(match.id);
+      this.archive.save({
+        id: match.id,
+        game: game.meta.id,
+        endedAt: Date.now(),
+        players: seated.map((u) => u.name),
+        options: live.options,
+        over: match.over,
+        snapshot: match.snapshot(null),
+      });
+    }
     const players = seated.filter((u) => u.match === match);
     for (const u of players) {
       u.match = null;
@@ -255,5 +390,6 @@ export class Lobby {
     }
     for (const u of players) if (!u.conn) this.removeUser(u);
     this.broadcastUsers();
+    this.broadcastMatches();
   }
 }

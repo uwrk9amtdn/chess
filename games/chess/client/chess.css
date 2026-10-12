@@ -1,16 +1,17 @@
 /* Chess screen. Colours such as --surface come from the platform's style.css. */
 
-.chess, .chessPromotion {
+.chess, .chessPromotion, .chessThumb {
   --sq-light: #f0d9b5;
   --sq-dark: #b58863;
   --move-ms: 150ms;
+  --radius: 8px;
 }
 
 .chess { display: flex; gap: 16px; justify-content: center; align-items: flex-start; }
 .chessSide { width: 260px; flex: none; display: flex; flex-direction: column; gap: 16px; }
 .chessTable { flex: 1; max-width: calc(100dvh - 100px); min-width: 0; }
 .chessControls { width: 280px; flex: none; display: flex; flex-direction: column; align-self: center; }
-.chessCard { background: var(--surface); border-radius: 4px; box-shadow: var(--shadow); }
+.chessCard { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
 
 /* ---- game details and chat ---- */
 
@@ -19,6 +20,7 @@
 .chessNames div { display: flex; align-items: center; gap: 8px; }
 .chess .swatch { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--text); flex: none; }
 .chess .swatch.seat1 { background: var(--text); }
+.chessWatchers { color: var(--muted); font-size: 13px; }
 .chessResult { border-top: 1px solid var(--border); padding-top: 8px; text-align: center; }
 
 .chessChat { display: flex; flex-direction: column; min-height: 0; }
@@ -39,6 +41,7 @@
 .chessBoard {
   position: relative;
   aspect-ratio: var(--cols, 8) / var(--rows, 8);
+  border-radius: 4px;
   box-shadow: var(--shadow);
   user-select: none;
   touch-action: none;
@@ -48,6 +51,9 @@
   grid-template-columns: repeat(var(--cols, 8), 1fr);
   grid-template-rows: repeat(var(--rows, 8), 1fr);
   height: 100%;
+  /* Only the squares are clipped, so a dragged piece can cross the edge. */
+  border-radius: inherit;
+  overflow: hidden;
 }
 .chessBoard .sq { position: relative; container-type: size; }
 .chessBoard .sq.light { background-color: var(--sq-light); }
@@ -89,6 +95,22 @@
 .chessPieces .piece.dragging { z-index: 10; }
 .chessPieces .piece.still, .chessPieces .piece.dragging { transition: none; }
 
+/* A position in a list of games: the same squares, with the piece drawn on
+   the square itself. A square in check gives up its glow for the piece. */
+.chessThumb {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 8), 1fr);
+  grid-template-rows: repeat(var(--rows, 8), 1fr);
+  aspect-ratio: var(--cols, 8) / var(--rows, 8);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.chessThumb .sq { background: center / cover no-repeat; }
+.chessThumb .sq.light { background-color: var(--sq-light); }
+.chessThumb .sq.dark { background-color: var(--sq-dark); }
+.chessThumb .sq.last { box-shadow: inset 0 0 0 100vmax rgba(155, 199, 0, 0.41); }
+.chessThumb .sq.check { background-color: #e70000; }
+
 /* ---- clocks, moves and actions ---- */
 
 .chessClock {
@@ -96,13 +118,13 @@
   padding: 0 14px;
   background: var(--surface);
   box-shadow: var(--shadow);
-  font: 300 50px/1.25 'Noto Sans', 'Segoe UI', system-ui, sans-serif;
+  font: 700 50px/1.25 'Noto Sans', 'Segoe UI', system-ui, sans-serif;
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
-.chessClock:first-of-type { border-radius: 4px 4px 0 0; }
-.chessClock:last-of-type { border-radius: 0 0 4px 4px; }
+.chessClock:has(+ .chessPanel) { border-radius: var(--radius) var(--radius) 0 0; }
+.chessPanel + .chessClock { border-radius: 0 0 var(--radius) var(--radius); }
 .chessClock.active { background: #d0e0bd; color: #333; }
 .chessClock.low { background: #f7d9d9; color: var(--danger); }
 
@@ -110,7 +132,8 @@
 .chessMaterial .piece { width: 22px; height: 22px; margin-right: -8px; background: center / contain no-repeat; opacity: 0.55; }
 .chessMaterial .piece:last-of-type { margin-right: 4px; }
 
-.chessPanel { display: flex; flex-direction: column; position: relative; z-index: 1; }
+/* The clocks are tabs on this card, so it is square where they join it. */
+.chessPanel { display: flex; flex-direction: column; position: relative; z-index: 1; border-radius: 0 var(--radius) var(--radius) 0; }
 .chessBar { height: 4px; background: var(--surface-2); }
 .chessBar span { display: block; height: 100%; background: var(--accent); }
 .chessPlayer { display: flex; align-items: center; gap: 10px; padding: 8px 14px; font-size: 17px; }

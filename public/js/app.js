@@ -8,16 +8,21 @@ import { play, isMuted, setMuted } from './sounds.js';
 
 const $ = (id) => document.getElementById(id);
 const SESSION_KEY = 'games.session';
+const WATCH_KEY = 'games.watching';
 const RECONNECT_MS = 1000;
 const TOAST_MS = 4000;
-
 let ws = null;
 let me = null;
 let users = [];
 let games = new Map(); // id -> meta, as sent by the server
 const clients = new Map(); // id -> the game's browser module
 let route = null; // id of the game page that is open, or null for the grid
-let match = null; // { game, snapshot }: the match being played or just finished
+let match = null; // { game, snapshot }: the match being played, watched or just finished
+let liveMatches = []; // every match anyone could watch right now
+let following = null; // id of the game whose matches the server keeps us posted on
+let previewLimit = Infinity; // with more matches than this, boards are not sent on every move
+let past = { games: [], more: false }; // finished matches of the game whose page is open
+let rewatch = null; // id of a match to go back to watching after reconnecting
 let mounted = null; // { game, view }: the game screen currently on the page
 let resuming = false; // the next match message continues an old match
 let outgoing = null; // the invitation we sent, if any
@@ -59,7 +64,28 @@ function saveSession(session) {
   }
 }
 
-const playing = () => Boolean(match && !match.snapshot.over);
+// A spectator's snapshot has no seat: `you` is null.
+const spectating = () => Boolean(match && match.snapshot.you === null);
+// The match being watched is remembered for this tab, like the session, so a
+// reload returns to it.
+function rememberWatching(id) {
+  try {
+    if (id) sessionStorage.setItem(WATCH_KEY, id);
+    else sessionStorage.removeItem(WATCH_KEY);
+  } catch {
+    // Without storage a reload simply returns to the list of games.
+  }
+}
+
+function recallWatching() {
+  try {
+    return sessionStorage.getItem(WATCH_KEY);
+  } catch {
+    return null;
+  }
+}
+
+const playing = () => Boolean(match && !match.snapshot.over && !spectating());
 
 // ---- connection ----
 
@@ -97,13 +123,18 @@ const handlers = {
     $('nameDialog').close();
     $('me').textContent = `Signed in as ${me}`;
     games = new Map(msg.games.map((g) => [g.id, g]));
+    previewLimit = msg.previewLimit;
+    following = null;
     await Promise.all(msg.games.map(async (g) => {
       if (!clients.has(g.id)) clients.set(g.id, (await import(`/games/${g.id}/client/index.js`)).default);
     }));
     // After a reconnect the server resends a match that is still running and
     // has dropped every invitation, so start from a clean slate.
     resuming = msg.resumed;
-    if (playing()) closeMatch();
+    // A game we were watching has to be asked for again, once the list of
+    // matches shows that it is still being played.
+    rewatch = recallWatching();
+    if (playing() || (spectating() && !match.snapshot.over)) closeMatch();
     outgoing = null;
     incoming.clear();
     applyRoute();
@@ -115,6 +146,28 @@ const handlers = {
   },
   users(msg) {
     users = msg.users;
+    render();
+  },
+  matches(msg) {
+    const ended = liveMatches.some((old) => !msg.matches.some((m) => m.id === old.id));
+    liveMatches = msg.matches;
+    if (rewatch && !match && liveMatches.some((m) => m.id === rewatch)) send({ type: 'watch', id: rewatch });
+    else if (rewatch) rememberWatching(null);
+    rewatch = null;
+    // A match that just ended is now among the past ones.
+    if (ended) requestHistory();
+    render();
+  },
+  // One match in progress looks different now.
+  preview(msg) {
+    const live = liveMatches.find((m) => m.id === msg.id);
+    if (!live) return;
+    live.preview = msg.preview;
+    if (route === live.game && !match) renderLiveMatches();
+  },
+  history(msg) {
+    if (msg.game !== route) return;
+    past = { games: msg.before === null ? msg.games : [...past.games, ...msg.games], more: msg.more };
     render();
   },
   invite(msg) {
@@ -136,9 +189,10 @@ const handlers = {
   },
   match(msg) {
     const fresh = !match || match.snapshot.id !== msg.snapshot.id;
-    if (fresh && !resuming && !msg.snapshot.over) play('start');
+    if (fresh && !resuming && !msg.snapshot.over && msg.snapshot.you !== null) play('start');
     resuming = false;
     match = { game: msg.game, snapshot: msg.snapshot };
+    rememberWatching(spectating() && !msg.snapshot.over ? msg.snapshot.id : null);
     // A match takes over the page, wherever the player was.
     if (route !== msg.game) {
       route = msg.game;
@@ -188,6 +242,8 @@ function unmount() {
 }
 
 function closeMatch() {
+  if (spectating() && !match.snapshot.over) send({ type: 'unwatch' });
+  rememberWatching(null);
   match = null;
   if (mounted) unmount();
 }
@@ -203,12 +259,15 @@ function applyRoute() {
     return;
   }
   if (match && next !== match.game) closeMatch();
+  if (next !== route) past = { games: [], more: false };
   route = next;
+  requestHistory();
   render();
 }
 window.addEventListener('hashchange', applyRoute);
 
 function render() {
+  syncFollowing();
   $('home').hidden = route !== null;
   $('gamePage').hidden = route === null;
   renderGrid();
@@ -219,11 +278,18 @@ function render() {
   $('gameTitle').textContent = meta.name;
   $('gameDescription').textContent = meta.description;
   $('gameHint').hidden = Boolean(match);
+  if (!match) {
+    renderLiveMatches();
+    renderPastMatches();
+  }
   $('backLink').hidden = playing();
-  // Offered once a match is over; assumes the two-player games the lobby seats today.
+  // Rematch is offered once a match is over; assumes the two-player games the
+  // lobby seats today. A spectator can leave at any time.
   const over = Boolean(match && match.snapshot.over);
-  $('afterGame').hidden = !over;
-  if (over) {
+  $('afterGame').hidden = !over && !spectating();
+  $('rematch').hidden = spectating();
+  $('closeMatch').textContent = spectating() && !over ? 'Stop watching' : 'Close';
+  if (over && !spectating()) {
     const rival = opponent();
     const free = users.some((u) => u.name === rival && u.status === 'idle');
     $('rematch').disabled = !free || Boolean(outgoing);
@@ -239,6 +305,71 @@ $('closeMatch').addEventListener('click', () => {
   closeMatch();
   render();
 });
+
+// One match in a grid: the last seat's name, the game's own preview, the
+// first seat's name (the side a spectator sits on), then the given lines.
+function matchCard(m, lines, onclick) {
+  const client = clients.get(route);
+  const picture = el('div', { className: 'matchPreview' });
+  if (m.preview && client.preview) client.preview(picture, m.preview);
+  const [first, ...others] = m.players;
+  return el('button', { className: 'matchCard', onclick },
+    el('span', { className: 'matchName', textContent: others.join(', ') }),
+    picture,
+    el('span', { className: 'matchName', textContent: first }),
+    ...lines);
+}
+
+const liveHere = () => liveMatches.filter((m) => m.game === route);
+
+function renderLiveMatches() {
+  const live = liveHere();
+  const cards = live.map((m) => matchCard(m, [
+    el('span', { className: 'matchResult matchLive', textContent: 'Playing now' }),
+    el('span', { className: 'matchDetail', textContent: clients.get(route).describeOptions(m.options) }),
+  ], () => send({ type: 'watch', id: m.id })));
+  $('noLiveGames').hidden = cards.length > 0;
+  $('liveGames').replaceChildren(...cards);
+  $('livePaused').hidden = live.length <= previewLimit;
+  $('livePaused').textContent =
+    `With more than ${previewLimit} games the boards are only refreshed when a game starts or ends.`;
+}
+
+// While a game's list of matches is on screen we follow that game, and the
+// server sends each board as it changes.
+function syncFollowing() {
+  const wanted = route && !match ? route : null;
+  if (wanted === following) return;
+  following = wanted;
+  send(wanted ? { type: 'follow', game: wanted } : { type: 'unfollow' });
+}
+
+// Asks for the finished matches of the open game: the newest ones, or with
+// `more` the ones after those already listed.
+function requestHistory(more = false) {
+  if (!route) return;
+  send({
+    type: 'history',
+    game: route,
+    player: $('onlyMine').checked ? me : undefined,
+    before: more && past.games.length ? past.games[past.games.length - 1].seq : undefined,
+  });
+}
+$('onlyMine').addEventListener('change', () => requestHistory());
+$('morePast').addEventListener('click', () => requestHistory(true));
+
+const formatDate = (ms) => new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+
+function renderPastMatches() {
+  const client = clients.get(route);
+  const cards = past.games.map((m) => matchCard(m, [
+    el('span', { className: 'matchResult', textContent: client.describeResult?.({ ...m, game: route }) ?? '' }),
+    el('span', { className: 'matchDetail', textContent: `${client.describeOptions(m.options)} · ${formatDate(m.endedAt)}` }),
+  ], () => send({ type: 'review', id: m.id })));
+  $('noPastGames').hidden = cards.length > 0;
+  $('pastGames').replaceChildren(...cards);
+  $('morePast').hidden = !past.more;
+}
 
 function renderGrid() {
   $('gameGrid').replaceChildren(...[...games.values()].map((g) => {

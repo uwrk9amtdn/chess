@@ -2,7 +2,7 @@
 
 Every folder in `games/` that contains `server/index.js` is a game. The server finds it at start-up and the site shows it in the grid; no platform file needs editing. `games/chess/` is the worked example, and `test/fixtures/games/pick/` is the smallest server side that works.
 
-The platform (in `server/` and `public/`) handles user names, the player list, invitations, reconnecting and the page around the game. A game supplies its rules and its screen.
+The platform (in `server/` and `public/`) handles user names, the player list, invitations, reconnecting, the list of matches to watch, the archive of finished matches and the page around the game. A game supplies its rules and its screen.
 
 ## Folder layout
 
@@ -39,6 +39,7 @@ Default-export an object with:
 | --- | --- |
 | `meta` | The object from `meta.js`. |
 | `validateOptions(options, limits)` | Checks what a player asked for in an invitation. Return `{ options }` with a clean copy holding only the fields you use, or `{ error: 'message for the player' }`. `options` comes straight from a browser, so trust nothing in it. `limits` is only set by tests. |
+| `preview(snapshot)` | Optional. Given a spectator's snapshot, returns a small piece of JSON from which the browser can draw a thumbnail of the match (see `preview` in `client/index.js`). It is sent with every match in the lists of games in progress and past games, and again to everyone looking at the list each time it changes (unless more than 12 matches of the game are going), so keep it short. |
 | `createMatch({ players, options, onChange })` | Starts a match and returns it. `players` is one name per seat, in a random order chosen by the lobby. Call `onChange(match)` whenever the players should see something new, including when the match ends. |
 
 The match object needs:
@@ -49,7 +50,8 @@ The match object needs:
 | `handle(seat, action)` | A message from the player in `seat`. `action.action` names it and the rest is yours to define. Return an error string to show that player, or `null`. |
 | `setConnected(seat, connected)` | The player dropped or came back. |
 | `abandon(seat)` | The player stayed away past the grace period; end the match. |
-| `snapshot(seat)` | Everything that player's screen needs, as plain JSON. Must include `id` (unique per match), `players`, `you` (the seat), `options` and `over`; the platform uses these for the start sound and the rematch button. Leave out anything that seat must not see. |
+| `setSpectators(count)` | Optional. Called when the number of people watching changes; put it in the snapshot and call `onChange` if the screen shows it. |
+| `snapshot(seat)` | Everything that player's screen needs, as plain JSON. `seat` is `null` for a spectator, who must get nothing that is hidden from any player. When a match ends the platform saves `snapshot(null)` and later shows it to anyone who wants to look at the match again, so it has to be enough to draw the whole game, not just its last moment. Must include `id` (unique per match), `players`, `you` (the seat), `options` and `over`; the platform uses these for the start sound and the rematch button. Leave out anything that seat must not see. |
 
 Timers a match starts should be `unref()`ed so they never keep the process alive.
 
@@ -61,7 +63,9 @@ Default-export an object with:
 | --- | --- |
 | `inviteForm(container, submit)` | Draw the options for a new match into `container` (inside the platform's dialog) and call `submit(options)` when the player confirms. With no options, draw one button. |
 | `describeOptions(options)` | A few words for invitation cards, e.g. `3+1`. |
-| `mount(container, ctx)` | Build the game screen in `container` and return `{ update(snapshot), destroy() }`. `update` is called with every new snapshot, and again with the same one if the server refused an action, so anything shown early can be undone. `destroy` must stop timers and listeners. The returned object may also have `chat(messages)`: it is called with the whole conversation, an array of `{ from, text }`, when the screen opens and after every new message. |
+| `describeResult({ players, options, over })` | Optional. A few words on how a finished match ended, for the list of past matches, e.g. `1-0 • Black resigned`. `over` is the match's `over` value. |
+| `preview(container, preview)` | Optional. Draw the thumbnail that the server's `preview` describes into `container`, as seen from the first seat's side. Called again with a newer preview while a match is being played. |
+| `mount(container, ctx)` | Build the game screen in `container` and return `{ update(snapshot), destroy() }`. `update` is called with every new snapshot, and again with the same one if the server refused an action, so anything shown early can be undone. `snapshot.you` is `null` when the screen is shown to a spectator: draw the match but offer no actions. `destroy` must stop timers and listeners. The returned object may also have `chat(messages)`: it is called with the whole conversation, an array of `{ from, text }`, when the screen opens and after every new message. |
 
 `ctx` provides:
 

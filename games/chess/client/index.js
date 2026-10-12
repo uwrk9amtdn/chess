@@ -4,7 +4,7 @@
 
 import { variants } from '../shared/variants.js';
 import { createGame, applyMove, inCheck, seatToMove, teamOf, kingSquares } from '../shared/engine.js';
-import { createBoard, pieceUrl } from './board.js';
+import { createBoard, drawThumbnail, pieceUrl } from './board.js';
 
 const LOW_TIME_MS = 10_000;
 const PRESETS = [[1, 1], [3, 1], [5, 1]];
@@ -118,14 +118,21 @@ const ENDINGS = {
   agreement: () => 'Mutual agreement',
 };
 
-// { score: '1-0', text: 'Black resigned • White is victorious' }
-function describeResult(variant, { reason, winner }) {
-  if (winner === null) return { score: '½-½', text: `${ENDINGS[reason]()} • Draw` };
+// { score: '1-0', how: 'Black resigned', text: 'Black resigned • White is victorious' }
+function resultOf(variant, { reason, winner }) {
+  if (winner === null) {
+    const how = ENDINGS[reason]();
+    return { score: '½-½', how, text: `${how} • Draw` };
+  }
   const colour = (won) => capitalise(variant.seats.find((s) => (s.team === winner) === won).id);
-  return {
-    score: winner === 0 ? '1-0' : '0-1',
-    text: `${ENDINGS[reason](colour(false))} • ${colour(true)} is victorious`,
-  };
+  const how = ENDINGS[reason](colour(false));
+  return { score: winner === 0 ? '1-0' : '0-1', how, text: `${how} • ${colour(true)} is victorious` };
+}
+
+// "1-0 • Black resigned", for lists of finished games.
+function describeResult({ options, over }) {
+  const { score, how } = resultOf(variants[options.variant], over);
+  return `${score} • ${how}`;
 }
 
 function mount(container, ctx) {
@@ -149,6 +156,7 @@ function mount(container, ctx) {
 
   const timeEl = el('div', { className: 'chessTime' });
   const namesEl = el('div', { className: 'chessNames' });
+  const watchersEl = el('div', { className: 'chessWatchers' });
   const resultEl = el('div', { className: 'chessResult' });
 
   const chatToggle = el('input', { type: 'checkbox', checked: chatEnabled(), title: 'Show the chat' });
@@ -165,14 +173,15 @@ function mount(container, ctx) {
       onclick: () => ctx.sendChat(phrase),
     })));
   const chatBody = el('div', { className: 'chessChatBody' }, chatList, chatForm, chatQuick);
+  const chatCard = el('div', { className: 'chessCard chessChat' },
+    el('label', { className: 'chessChatHead' }, 'Chat room', chatToggle), chatBody);
 
   const promotionChoices = el('div');
   const promotionDialog = el('dialog', { className: 'chessPromotion' }, promotionChoices);
   container.replaceChildren(el('div', { className: 'chess' },
     el('div', { className: 'chessSide' },
-      el('div', { className: 'chessCard chessInfo' }, timeEl, namesEl, resultEl),
-      el('div', { className: 'chessCard chessChat' },
-        el('label', { className: 'chessChatHead' }, 'Chat room', chatToggle), chatBody)),
+      el('div', { className: 'chessCard chessInfo' }, timeEl, namesEl, watchersEl, resultEl),
+      chatCard),
     el('div', { className: 'chessTable' }, boardEl),
     el('div', { className: 'chessControls' },
       top.material, top.clock,
@@ -224,12 +233,15 @@ function mount(container, ctx) {
       ctx.play(/[+#]/.test(san) ? 'check' : san.includes('x') ? 'capture' : 'move');
     }
     if (same && next.over && !prev.over) ctx.play('end', 0.3);
-    const offered = (g) => g.drawOffer !== null && g.drawOffer !== g.you;
+    const offered = (g) => g.you !== null && g.drawOffer !== null && g.drawOffer !== g.you;
     if (offered(next) && !(same && offered(prev))) ctx.play('notify');
   }
 
-  // Two players for now; the seat that is not ours sits at the top.
-  const opponentSeat = () => game.players.findIndex((_, seat) => seat !== game.you);
+  // Our own seat is at the bottom; a spectator (`you` is null) sits behind the
+  // first seat. Two players for now, so the other seat is at the top.
+  const watching = () => game.you === null;
+  const bottomSeat = () => game.you ?? 0;
+  const topSeat = () => game.players.findIndex((_, seat) => seat !== bottomSeat());
 
   // The server sends the moves; replaying them gives every position of the
   // game, which is what lets the player step back through it.
@@ -264,8 +276,9 @@ function mount(container, ctx) {
   }
   document.addEventListener('keydown', onKey);
 
-  function statusText(mover) {
+  function statusText(variant, mover) {
     if (game.drawOffer !== null && game.drawOffer !== game.you) return `${game.players[game.drawOffer]} offers a draw`;
+    if (watching()) return `${capitalise(variant.seats[mover].id)} to move`;
     return mover === game.you ? 'Your move' : `Waiting for ${game.players[mover]}`;
   }
 
@@ -280,10 +293,10 @@ function mount(container, ctx) {
     const team = teamOf(variant, seatToMove(state));
 
     let mode = 'none';
-    if (live && ply === total) mode = mover === game.you ? 'move' : 'premove';
+    if (live && ply === total && !watching()) mode = mover === game.you ? 'move' : 'premove';
     board.update({
       state,
-      seat: game.you,
+      seat: bottomSeat(),
       lastMove: ply ? game.played[ply - 1] : null,
       checked: inCheck(state, team) ? kingSquares(state, team) : [],
       mode,
@@ -292,8 +305,10 @@ function mount(container, ctx) {
     });
     shown = { id: game.id, ply };
 
-    for (const [where, seat] of [[top, opponentSeat()], [bottom, game.you]]) {
+    for (const [where, seat] of [[top, topSeat()], [bottom, bottomSeat()]]) {
+      // Who is still connected says nothing once the game is over.
       where.player.querySelector('.dot').className = `dot ${game.connected[seat] ? 'online' : 'offline'}`;
+      where.player.querySelector('.dot').hidden = !live;
       where.player.querySelector('.name').textContent = game.players[seat];
       where.clock.classList.toggle('active', live && mover === seat);
       where.clock.dataset.clock = variant.seats[seat].clock;
@@ -303,12 +318,15 @@ function mount(container, ctx) {
     timeEl.textContent = `${formatTimeControl(game.options.minutes, game.options.increment)} • ${variant.name}`;
     namesEl.replaceChildren(...game.players.map((name, seat) => el('div', {},
       el('span', { className: `swatch seat${seat}` }), name)));
-    const result = game.over && describeResult(variant, game.over);
+    watchersEl.hidden = !game.spectators || !live;
+    watchersEl.textContent = `${game.spectators} watching`;
+    chatCard.hidden = watching();
+    const result = game.over && resultOf(variant, game.over);
     resultEl.hidden = !result;
     resultEl.textContent = result ? result.text : '';
     if (result) {
       statusEl.replaceChildren(el('strong', { textContent: result.score }), el('em', { textContent: result.text }));
-    } else statusEl.textContent = statusText(mover);
+    } else statusEl.textContent = statusText(variant, mover);
     statusEl.classList.toggle('over', !live);
 
     // One row per round: its number, then a move for each seat in turn order.
@@ -343,7 +361,7 @@ function mount(container, ctx) {
   function renderMaterial(state) {
     const counts = game.players.map(() => ({}));
     for (const p of state.board) if (p) counts[p.seat][p.type] = (counts[p.seat][p.type] || 0) + 1;
-    for (const [where, seat, rival] of [[top, opponentSeat(), game.you], [bottom, game.you, opponentSeat()]]) {
+    for (const [where, seat, rival] of [[top, topSeat(), bottomSeat()], [bottom, bottomSeat(), topSeat()]]) {
       const parts = [];
       let lead = 0;
       for (const [type, value] of Object.entries(PIECE_VALUES)) {
@@ -361,20 +379,24 @@ function mount(container, ctx) {
   }
 
   // The server sends the clocks as of the snapshot; between snapshots the
-  // running one is counted down locally.
+  // running one is counted down locally. An earlier position is shown with
+  // the time the players had left when it was reached.
   function updateClocks() {
     if (!game) return;
     const elapsed = performance.now() - gameAt;
+    const then = viewPly === null ? null : game.clockHistory?.[viewPly - 1];
     for (const where of [top, bottom]) {
       const clock = Number(where.clock.dataset.clock);
-      const ms = Math.max(0, game.clocks[clock] - (game.running === clock ? elapsed : 0));
+      let ms = Math.max(0, game.clocks[clock] - (game.running === clock ? elapsed : 0));
+      if (then) ms = then[clock];
+      else if (viewPly === 0) ms = game.initialMs;
       where.clock.textContent = formatClock(ms);
       where.clock.classList.toggle('low', ms < LOW_TIME_MS && !game.over);
       where.bar.firstChild.style.width = `${Math.min(100, (ms / game.initialMs) * 100)}%`;
     }
     // One warning when our own clock first drops into the last seconds.
     const mine = Number(bottom.clock.dataset.clock);
-    if (game.running === mine && lowTimeWarned !== game.id && game.clocks[mine] - elapsed < LOW_TIME_MS) {
+    if (!watching() && game.running === mine && lowTimeWarned !== game.id && game.clocks[mine] - elapsed < LOW_TIME_MS) {
       lowTimeWarned = game.id;
       ctx.play('lowTime');
     }
@@ -384,7 +406,7 @@ function mount(container, ctx) {
   // Once the game is over the platform offers the rematch.
   function renderActions() {
     actionsEl.replaceChildren();
-    if (game.over) return;
+    if (game.over || watching()) return;
     const button = (textContent, action, props = {}) => el('button', {
       textContent,
       onclick: () => ctx.send({ action }),
@@ -448,4 +470,9 @@ function mount(container, ctx) {
   };
 }
 
-export default { inviteForm, describeOptions, mount };
+// Draws what the server's `preview` describes, for lists of games.
+function preview(container, { variant, ...position }) {
+  drawThumbnail(container, { variant: variants[variant], ...position });
+}
+
+export default { inviteForm, describeOptions, describeResult, preview, mount };
