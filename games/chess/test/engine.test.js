@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createGame, legalMoves, applyMove, status, toSan, findMove, fromFEN,
+  createGame, legalMoves, applyMove, status, toSan, findMove, fromFEN, premoveTargets,
 } from '../shared/engine.js';
 import { standard, double, facingSetup } from '../shared/variants.js';
 
@@ -156,4 +156,18 @@ test('castling notation names the king when there are two', () => {
   ] });
   assert.equal(toSan(s, findMove(s, { from: 4, to: 6 })), 'O-O(e)');
   assert.equal(toSan(s, findMove(s, { from: 12, to: 14 })), 'O-O(m)');
+});
+
+test('premove targets follow the geometry of the piece, not the position', () => {
+  const start = createGame(standard);
+  const names = (from) => premoveTargets(start, sq(from)).map((i) => String.fromCharCode(97 + (i % 8)) + (Math.floor(i / 8) + 1)).sort();
+  // The rook sees through its own pawn and knight.
+  assert.deepEqual(names('a1'), ['a2', 'a3', 'a4', 'a5', 'a6', 'a7', 'a8', 'b1', 'c1', 'd1', 'e1', 'f1', 'g1', 'h1']);
+  // A pawn may be about to capture on either side.
+  assert.deepEqual(names('e2'), ['d3', 'e3', 'e4', 'f3']);
+  assert.deepEqual(names('e7'), ['d6', 'e5', 'e6', 'f6']);
+  // The king's steps plus both castling squares.
+  assert.deepEqual(names('e1'), ['c1', 'd1', 'd2', 'e2', 'f1', 'f2', 'g1']);
+  assert.deepEqual(names('g8'), ['e7', 'f6', 'h6']);
+  assert.deepEqual(names('e4'), []);
 });

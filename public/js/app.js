@@ -21,6 +21,7 @@ let match = null; // { game, snapshot }: the match being played or just finished
 let mounted = null; // { game, view }: the game screen currently on the page
 let resuming = false; // the next match message continues an old match
 let outgoing = null; // the invitation we sent, if any
+let chat = { id: null, messages: [] }; // what was said in the match with that id
 const incoming = new Map(); // id -> invitation
 
 function el(tag, props = {}, ...children) {
@@ -144,9 +145,22 @@ const handlers = {
       location.hash = `#/${msg.game}`;
     }
     if (mounted && mounted.game !== match.game) unmount();
-    if (!mounted) mounted = { game: match.game, view: clients.get(match.game).mount($('matchHost'), ctx) };
+    const opened = !mounted;
+    if (opened) mounted = { game: match.game, view: clients.get(match.game).mount($('matchHost'), ctx) };
     mounted.view.update(match.snapshot);
+    if (chat.id !== msg.snapshot.id) chat = { id: msg.snapshot.id, messages: [] };
+    if (fresh || opened) showChat();
     render();
+  },
+  chat(msg) {
+    if (chat.id !== msg.id) chat = { id: msg.id, messages: [] };
+    chat.messages.push({ from: msg.from, text: msg.text });
+    showChat();
+  },
+  // Everything said so far, sent when we come back to a match.
+  chatLog(msg) {
+    chat = { id: msg.id, messages: msg.messages };
+    showChat();
   },
   error(msg) {
     toast(msg.message);
@@ -155,9 +169,15 @@ const handlers = {
   },
 };
 
+// Hands the conversation to the game on screen, if it shows one.
+function showChat() {
+  if (mounted && match && match.snapshot.id === chat.id) mounted.view.chat?.(chat.messages);
+}
+
 // What a game's screen gets from the platform.
 const ctx = {
   send: (action) => send({ ...action, type: 'action' }),
+  sendChat: (text) => send({ type: 'chat', text }),
   play,
   toast,
 };

@@ -1,18 +1,19 @@
 /* The site shell. Games bring their own stylesheet and may use these colours. */
 
 :root {
-  --bg: #1f2126;
-  --surface: #2a2d34;
-  --surface-2: #353942;
-  --border: #434854;
-  --text: #e8e9ec;
-  --muted: #9aa0ad;
-  --accent: #6aa84f;
-  --accent-text: #10210a;
-  --danger: #d9534f;
-  --idle: #5cc46a;
-  --busy: #e0a030;
-  color-scheme: dark;
+  --bg: #edebe9;
+  --surface: #fff;
+  --surface-2: #f7f6f5;
+  --border: #d9d9d9;
+  --text: #4d4d4d;
+  --muted: #787878;
+  --accent: #629924;
+  --accent-text: #fff;
+  --danger: #c33;
+  --idle: #629924;
+  --busy: #d59020;
+  --shadow: 0 2px 2px rgba(0, 0, 0, 0.14), 0 3px 1px -2px rgba(0, 0, 0, 0.2), 0 1px 5px rgba(0, 0, 0, 0.12);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -52,7 +53,7 @@ input, select {
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--bg);
+  background: var(--surface);
   color: var(--text);
 }
 
@@ -97,9 +98,10 @@ main { padding: 16px; min-width: 0; }
   gap: 6px;
   align-content: start;
   padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
   background: var(--surface);
+  box-shadow: var(--shadow);
   color: var(--text);
   text-decoration: none;
 }
@@ -126,9 +128,9 @@ main { padding: 16px; min-width: 0; }
 .invite, .toast, #offline {
   padding: 10px 12px;
   border-radius: 6px;
-  background: var(--surface-2);
+  background: var(--surface);
   border: 1px solid var(--border);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow);
 }
 .invite { display: flex; flex-wrap: wrap; gap: 8px; border-color: var(--accent); }
 .invite p { width: 100%; }
@@ -142,7 +144,7 @@ dialog {
   padding: 20px;
   width: min(340px, calc(100vw - 32px));
 }
-dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
 dialog[open], dialog form, #inviteForm { display: grid; gap: 12px; }
 dialog h2 { font-size: 18px; color: var(--text); text-transform: none; letter-spacing: 0; }
 .hint { color: var(--muted); font-size: 13px; }

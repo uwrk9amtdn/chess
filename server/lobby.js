@@ -2,14 +2,17 @@
 // knows nothing about any particular game: it asks the game to check an
 // invitation's options, to create a match, and forwards the players' actions.
 //
-// Client -> server: join, invite, cancel, accept, decline, action
+// Client -> server: join, invite, cancel, accept, decline, action, chat
 // Server -> client: joined, joinError, users, invite, inviteSent,
-//                   inviteClosed, match, error
+//                   inviteClosed, match, chat, chatLog, error
 
 import { randomUUID } from 'node:crypto';
 
 const NAME = /^[\p{L}\p{N}_-]+( [\p{L}\p{N}_-]+)*$/u;
 const INVITE_TTL_MS = 30_000;
+const CHAT_MAX_LENGTH = 140;
+const CHAT_MIN_GAP_MS = 500;
+const CHAT_LOG_SIZE = 100;
 
 export class Lobby {
   // `games` is the Map from loadGames. `limits` holds per-game overrides
@@ -66,6 +69,7 @@ export class Lobby {
       case 'cancel': return this.answerInvite(user, msg.id, 'cancelled');
       case 'decline': return this.answerInvite(user, msg.id, 'declined');
       case 'accept': return this.accept(user, msg.id);
+      case 'chat': return this.chat(user, msg.text);
       case 'action': {
         if (!user.match) return;
         const error = user.match.handle(user.seat, msg);
@@ -97,7 +101,10 @@ export class Lobby {
       }
       clearTimeout(user.dropTimer);
     } else {
-      user = { name, key, token: randomUUID(), conn: null, match: null, gameId: null, seat: null, dropTimer: null };
+      user = {
+        name, key, token: randomUUID(), conn: null, match: null, gameId: null, seat: null, dropTimer: null,
+        room: null, lastChatAt: 0,
+      };
       this.users.set(key, user);
     }
     user.conn = conn;
@@ -111,6 +118,7 @@ export class Lobby {
       resumed: Boolean(user.match),
     });
     this.broadcastUsers();
+    if (user.room) this.send(user, { type: 'chatLog', id: user.room.id, messages: user.room.log });
     if (user.match) user.match.setConnected(user.seat, true);
   }
 
@@ -135,6 +143,7 @@ export class Lobby {
     clearTimeout(user.dropTimer);
     if (this.users.get(user.key) !== user) return;
     this.users.delete(user.key);
+    user.room = null;
     this.closeInvitesOf(user, 'unavailable');
     this.broadcastUsers();
   }
@@ -202,13 +211,33 @@ export class Lobby {
       options,
       onChange: (m) => this.matchChanged(m, game, seated),
     });
+    // The players of a match can talk to each other. The room outlives the
+    // match, until its players move on to another one or leave.
+    const room = { id: match.id, members: seated, log: [] };
     seated.forEach((u, seat) => {
+      u.room = room;
       u.match = match;
       u.gameId = game.meta.id;
       u.seat = seat;
     });
     this.broadcastUsers();
     this.matchChanged(match, game, seated);
+  }
+
+  chat(user, text) {
+    const room = user.room;
+    if (!room || typeof text !== 'string') return;
+    const clean = text.trim().replace(/\s+/g, ' ');
+    if (!clean || clean.length > CHAT_MAX_LENGTH) return;
+    const now = Date.now();
+    if (now - user.lastChatAt < CHAT_MIN_GAP_MS) return;
+    user.lastChatAt = now;
+    const message = { from: user.name, text: clean };
+    room.log.push(message);
+    if (room.log.length > CHAT_LOG_SIZE) room.log.shift();
+    for (const u of room.members) {
+      if (u.room === room) this.send(u, { type: 'chat', id: room.id, ...message });
+    }
   }
 
   matchChanged(match, game, seated) {

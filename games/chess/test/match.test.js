@@ -4,6 +4,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import chess from '../server/index.js';
+import { createGame, applyMove, serialize } from '../shared/engine.js';
+import { variants } from '../shared/variants.js';
 import { startServer } from '../../../server/index.js';
 import { connect } from '../../../test/helpers.js';
 
@@ -41,6 +43,10 @@ test('moves, turn order and the increment', () => {
   const snap = changes.at(-1);
   assert.deepEqual(snap.moves, ['e4']);
   assert.deepEqual(snap.lastMove, { from: 12, to: 28 });
+  // The moves are also sent in a form the browser can replay.
+  assert.deepEqual(JSON.parse(JSON.stringify(snap.played)), [{ from: 12, to: 28 }]);
+  const replayed = applyMove(createGame(variants.standard), snap.played[0]);
+  assert.deepEqual(serialize(replayed), snap.state);
   assert.equal(snap.running, 1);
   assert.ok(snap.clocks[0] > 180_000 && snap.clocks[0] <= 181_000);
   assert.deepEqual(snap.options, { variant: 'standard', minutes: 3, increment: 1 });

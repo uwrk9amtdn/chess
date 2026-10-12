@@ -61,12 +61,13 @@ Default-export an object with:
 | --- | --- |
 | `inviteForm(container, submit)` | Draw the options for a new match into `container` (inside the platform's dialog) and call `submit(options)` when the player confirms. With no options, draw one button. |
 | `describeOptions(options)` | A few words for invitation cards, e.g. `3+1`. |
-| `mount(container, ctx)` | Build the game screen in `container` and return `{ update(snapshot), destroy() }`. `update` is called with every new snapshot, and again with the same one if the server refused an action, so anything shown early can be undone. `destroy` must stop timers and listeners. |
+| `mount(container, ctx)` | Build the game screen in `container` and return `{ update(snapshot), destroy() }`. `update` is called with every new snapshot, and again with the same one if the server refused an action, so anything shown early can be undone. `destroy` must stop timers and listeners. The returned object may also have `chat(messages)`: it is called with the whole conversation, an array of `{ from, text }`, when the screen opens and after every new message. |
 
 `ctx` provides:
 
 - `ctx.send({ action: 'move', ... })`: sends an action to your match's `handle`.
 - `ctx.play(name, delay?)`: plays a sound from `public/js/sounds.js` (`move`, `capture`, `check`, `end`, `notify`, `lowTime`). The platform already plays `start` for a new match and `notify` for invitations.
+- `ctx.sendChat(text)`: says something to the other players of the match (up to 140 characters). The platform keeps the conversation, also after the match is over, and gives it back through the view's `chat`. It plays no sound for a message; that is up to the game.
 - `ctx.toast(text)`: shows a short notice.
 
 Load your own stylesheet from the module, as chess does, and prefix its class names with the game's name. The colour variables defined at the top of `public/style.css` (`--surface`, `--accent`, and so on) are available. Once a match is over the platform shows Rematch and Close above your screen, so the game does not need its own.

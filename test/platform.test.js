@@ -121,6 +121,54 @@ test('reconnecting mid-match keeps the seat; staying away forfeits', async (t) =
   assert.deepEqual(statuses(await alice.next('users', (m) => m.users.length === 1)), { alice: 'idle' });
 });
 
+test('the players of a match can chat, also after it is over', async (t) => {
+  const server = await startServer({ port: 0, gamesDir });
+  t.after(() => server.close());
+  let alice = connect(server.port);
+  const bob = connect(server.port);
+  await Promise.all([alice.opened, bob.opened]);
+  alice.send({ type: 'join', name: 'alice' });
+  bob.send({ type: 'join', name: 'bob' });
+  const { token } = await alice.next('joined');
+  await alice.next('users', (m) => m.users.length === 2);
+
+  // Nobody to talk to yet, so this goes nowhere.
+  alice.send({ type: 'chat', text: 'anyone?' });
+  alice.send({ type: 'invite', to: 'bob', game: 'pick' });
+  bob.send({ type: 'accept', id: (await bob.next('invite')).id });
+  const { id } = (await bob.next('match')).snapshot;
+
+  alice.send({ type: 'chat', text: '  good   luck  ' });
+  const hello = { type: 'chat', id, from: 'alice', text: 'good luck' };
+  assert.deepEqual(await bob.next('chat'), hello);
+  assert.deepEqual(await alice.next('chat'), hello);
+
+  // Too long, empty, not text, and too soon after the last one: all dropped.
+  bob.send({ type: 'chat', text: 'x'.repeat(141) });
+  bob.send({ type: 'chat', text: '   ' });
+  bob.send({ type: 'chat', text: 7 });
+  bob.send({ type: 'chat', text: 'thanks' });
+  bob.send({ type: 'chat', text: 'too fast' });
+  assert.equal((await alice.next('chat')).text, 'thanks');
+
+  // Coming back to the match brings the conversation along.
+  alice.close();
+  alice = connect(server.port);
+  await alice.opened;
+  alice.send({ type: 'join', name: 'alice', token });
+  assert.deepEqual(await alice.next('chatLog'), {
+    type: 'chatLog',
+    id,
+    messages: [{ from: 'alice', text: 'good luck' }, { from: 'bob', text: 'thanks' }],
+  });
+
+  bob.send({ type: 'action', action: 'claim' });
+  await alice.next('match', (m) => m.snapshot.over);
+  await new Promise((resolve) => setTimeout(resolve, 550));
+  bob.send({ type: 'chat', text: 'gg' });
+  assert.deepEqual(await alice.next('chat'), { type: 'chat', id, from: 'bob', text: 'gg' });
+});
+
 test('only the browser parts of a game are served', async (t) => {
   const server = await startServer({ port: 0, gamesDir });
   t.after(() => server.close());

@@ -28,6 +28,8 @@ export class ChessMatch {
     this.clocks = new Array(clockCount).fill(initialMs);
     this.turnStartedAt = Date.now();
     this.moves = [];
+    // The same moves as { from, to, promotion }, so a client can replay them.
+    this.played = [];
     this.lastMove = null;
     this.drawOffer = null;
     this.connected = players.map(() => true);
@@ -99,6 +101,7 @@ export class ChessMatch {
     }
     this.clocks[c] = left + this.incrementMs;
     this.moves.push(toSan(this.state, move));
+    this.played.push({ from: move.from, to: move.to, promotion: move.promotion });
     this.state = applyMove(this.state, move);
     this.lastMove = { from: move.from, to: move.to };
     this.drawOffer = null;
@@ -164,6 +167,7 @@ export class ChessMatch {
       initialMs: this.initialMs,
       incrementMs: this.incrementMs,
       moves: this.moves,
+      played: this.played,
       lastMove: this.lastMove,
       check: inCheck(this.state, teamOf(this.variant, seatToMove(this.state))),
       drawOffer: this.drawOffer,

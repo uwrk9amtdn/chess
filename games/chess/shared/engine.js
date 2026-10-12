@@ -247,6 +247,43 @@ export function legalMoves(state, from) {
   return pseudoMoves(state, seat, from).filter((m) => !inCheck(play(state, m), team));
 }
 
+// Squares the piece on `from` could move to by its geometry alone, whoever is
+// to move and whatever stands in the way. These are the moves a player may
+// queue while waiting for their turn; findMove decides later if one is legal.
+export function premoveTargets(state, from) {
+  const { variant, board } = state;
+  const p = board[from];
+  if (!p) return [];
+  const w = variant.width;
+  const h = variant.height;
+  const x = from % w;
+  const y = (from - x) / w;
+  const [fx, fy] = variant.seats[p.seat].forward;
+  const targets = [];
+  const add = (tx, ty) => {
+    const inside = tx >= 0 && ty >= 0 && tx < w && ty < h;
+    if (inside) targets.push(ty * w + tx);
+    return inside;
+  };
+
+  if (p.type === 'p') {
+    add(x + fx, y + fy);
+    if (!p.moved) add(x + 2 * fx, y + 2 * fy);
+    for (const side of [1, -1]) add(x + fx + side * fy, y + fy + side * fx);
+  } else if (p.type === 'n' || p.type === 'k') {
+    for (const [dx, dy] of p.type === 'n' ? KNIGHT : ALL) add(x + dx, y + dy);
+    if (p.type === 'k' && !p.moved) {
+      // Castling runs along the back rank, at right angles to the pawns.
+      for (const side of [2, -2]) add(x + (fy !== 0 ? side : 0), y + (fy !== 0 ? 0 : side));
+    }
+  } else {
+    for (const [dx, dy] of SLIDES[p.type]) {
+      for (let d = 1; add(x + d * dx, y + d * dy); d++);
+    }
+  }
+  return targets;
+}
+
 // Resolves { from, to, promotion } to the full legal move, or null.
 export function findMove(state, { from, to, promotion } = {}) {
   if (!Number.isInteger(from) || from < 0 || from >= state.board.length) return null;
