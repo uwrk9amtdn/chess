@@ -3,11 +3,14 @@
 // draws them and sends the player's intent. See games/README.md.
 
 import { variants } from '../shared/variants.js';
-import { createGame, applyMove, inCheck, seatToMove, teamOf, kingSquares } from '../shared/engine.js';
+import {
+  createGame, applyMove, inCheck, seatToMove, teamOf, kingSquares, POCKET_TYPES,
+} from '../shared/engine.js';
 import { createBoard, drawThumbnail, pieceUrl } from './board.js';
 
 const LOW_TIME_MS = 10_000;
-const PRESETS = [[1, 1], [3, 1], [5, 1]];
+const PRESETS = [[1, 0], [2, 1], [3, 0], [3, 2], [5, 0], [5, 3], [10, 0], [10, 5], [15, 10], [30, 0], [30, 20]];
+const SETUP_KEY = 'chess.setup';
 const CHAT_PHRASES = { GG: 'Good game', WP: 'Well played', TY: 'Thank you', GTG: "I've got to go", BYE: 'Bye!' };
 const CHAT_MAX_LENGTH = 140;
 const CHAT_KEY = 'chess.chat';
@@ -78,31 +81,138 @@ function describeOptions({ minutes, increment, variant }) {
   return variant === 'standard' ? time : `${time} ${variants[variant].name}`;
 }
 
-// The board type, three quick time controls and a custom one.
-function inviteForm(container, submit) {
-  const variant = el('select', {},
-    ...Object.values(variants).map((v) => el('option', { value: v.id, textContent: v.name })));
-  const send = (minutes, increment) => submit({ variant: variant.value, minutes, increment });
+// The names of time controls by how long a game is likely to last: the
+// minutes plus forty moves' worth of increment.
+function timeCategory(minutes, increment) {
+  const seconds = minutes * 60 + 40 * increment;
+  if (seconds < 180) return 'Bullet';
+  if (seconds < 480) return 'Blitz';
+  return seconds < 1500 ? 'Rapid' : 'Classical';
+}
 
-  const minutes = el('input', { type: 'number', min: 1, max: 60, value: 10, required: true });
-  const increment = el('input', { type: 'number', min: 0, max: 30, value: 5, required: true });
-  const custom = el('form', { className: 'chessCustom' },
-    el('label', {}, 'Minutes ', minutes),
-    el('label', {}, 'Increment ', increment),
-    el('button', { textContent: 'Send custom' }));
-  custom.addEventListener('submit', (e) => {
-    e.preventDefault();
-    send(minutes.valueAsNumber, increment.valueAsNumber);
+// The values the two sliders step through.
+const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+const MINUTES = [...range(1, 20), 25, 30, 35, 40, 45, 60];
+const INCREMENTS = [...range(0, 20), 25, 30];
+
+// The variant and time last sent from the game setup are offered again.
+function rememberedSetup() {
+  const setup = { variant: 'standard', minutes: 5, increment: 3 };
+  try {
+    const saved = JSON.parse(localStorage.getItem(SETUP_KEY)) || {};
+    if (Object.hasOwn(variants, saved.variant)) setup.variant = saved.variant;
+    if (MINUTES.includes(saved.minutes)) setup.minutes = saved.minutes;
+    if (INCREMENTS.includes(saved.increment)) setup.increment = saved.increment;
+  } catch {
+    // Nothing usable was saved.
+  }
+  return setup;
+}
+
+function variantIcon(variant) {
+  return el('span', {
+    className: variant.plainIcon ? 'chessIcon plain' : 'chessIcon',
+    textContent: variant.plainIcon ? `${variant.icon}︎` : variant.icon,
   });
+}
 
-  container.append(
-    el('label', { className: 'chessField' }, 'Board ', variant),
-    el('p', { className: 'hint', textContent: 'Minutes per player + seconds added after each move.' }),
-    el('div', { className: 'chessPresets' }, ...PRESETS.map(([m, i]) => el('button', {
-      textContent: formatTimeControl(m, i),
-      onclick: () => send(m, i),
-    }))),
-    custom);
+// First a grid of time controls: clicking one sends an invitation to a game
+// of standard chess. "Custom" leads to the game setup, where the variant and
+// any time control can be chosen.
+function inviteForm(container, submit) {
+  const setup = rememberedSetup();
+
+  const tiles = PRESETS.map(([m, i]) => el('button', {
+    type: 'button',
+    className: 'chessTimeTile',
+    onclick: () => submit({ variant: 'standard', minutes: m, increment: i }),
+  }, el('strong', { textContent: formatTimeControl(m, i) }), el('span', { textContent: timeCategory(m, i) })));
+  const grid = el('div', { className: 'chessTimes' }, ...tiles,
+    el('button', { type: 'button', className: 'chessTimeTile', onclick: () => show(true) },
+      el('span', { textContent: 'Custom' })));
+
+  // The variant: a button showing the chosen one, which opens the list.
+  const picked = el('button', { type: 'button', className: 'chessVariantPick' });
+  const list = el('div', { className: 'chessVariants', hidden: true },
+    ...Object.values(variants).map((v) => el('button', {
+      type: 'button',
+      className: 'chessVariant',
+      onclick: () => {
+        setup.variant = v.id;
+        list.hidden = true;
+        renderVariant();
+      },
+    }, variantIcon(v), el('strong', { textContent: v.name }))));
+  picked.onclick = () => {
+    list.hidden = !list.hidden;
+  };
+  function renderVariant() {
+    const v = variants[setup.variant];
+    picked.replaceChildren(variantIcon(v), el('strong', { textContent: v.name }),
+      el('span', { className: 'about', textContent: v.description }), el('span', { className: 'caret', textContent: '▾' }));
+    [...list.children].forEach((row, i) => row.classList.toggle('selected', Object.keys(variants)[i] === setup.variant));
+  }
+
+  // The time: a slider each for the minutes and the increment.
+  const slider = (values) => el('input', { type: 'range', min: 0, max: values.length - 1, step: 1 });
+  const minutes = slider(MINUTES);
+  const increment = slider(INCREMENTS);
+  const minutesBadge = el('strong');
+  const incrementBadge = el('strong');
+  function renderTime() {
+    minutes.value = MINUTES.indexOf(setup.minutes);
+    increment.value = INCREMENTS.indexOf(setup.increment);
+    minutesBadge.textContent = setup.minutes;
+    incrementBadge.textContent = setup.increment;
+  }
+  minutes.oninput = () => {
+    setup.minutes = MINUTES[minutes.value];
+    renderTime();
+  };
+  increment.oninput = () => {
+    setup.increment = INCREMENTS[increment.value];
+    renderTime();
+  };
+  const chips = el('div', { className: 'chessChips' }, ...PRESETS.map(([m, i]) => el('button', {
+    type: 'button',
+    textContent: formatTimeControl(m, i),
+    onclick: () => {
+      Object.assign(setup, { minutes: m, increment: i });
+      renderTime();
+    },
+  })));
+
+  const form = el('div', { className: 'chessSetup', hidden: true },
+    el('div', { className: 'chessVariantBox' }, picked, list),
+    el('div', { className: 'chessSliders' },
+      el('label', {}, 'Minutes per side', minutes),
+      el('div', { className: 'chessBadges' }, minutesBadge, '+', incrementBadge),
+      el('label', {}, 'Increment in seconds', increment)),
+    chips,
+    el('div', { className: 'chessSetupActions' },
+      el('button', { type: 'button', textContent: '← Back', onclick: () => show(false) }),
+      el('button', {
+        type: 'button',
+        className: 'primary',
+        textContent: 'Send invitation',
+        onclick: () => {
+          try {
+            localStorage.setItem(SETUP_KEY, JSON.stringify(setup));
+          } catch {
+            // Storage can be unavailable; the setup is then not remembered.
+          }
+          submit({ ...setup });
+        },
+      })));
+
+  function show(custom) {
+    grid.hidden = custom;
+    form.hidden = !custom;
+    list.hidden = true;
+  }
+  renderVariant();
+  renderTime();
+  container.append(grid, form);
 }
 
 // How each ending reads, given the colour that lost: "Black resigned".
@@ -116,6 +226,13 @@ const ENDINGS = {
   fifty: () => 'Fifty moves without progress',
   material: () => 'Insufficient material',
   agreement: () => 'Mutual agreement',
+  // The variants' own endings.
+  hill: () => 'King in the centre',
+  checks: () => 'Three checks',
+  explosion: (loser) => `${loser}'s king exploded`,
+  horde: () => 'Horde destroyed',
+  goal: () => 'Race finished',
+  antichess: () => 'No moves left',
 };
 
 // { score: '1-0', how: 'Black resigned', text: 'Black resigned • White is victorious' }
@@ -141,7 +258,9 @@ function mount(container, ctx) {
     material: el('div', { className: 'chessMaterial' }),
     clock: el('div', { className: 'chessClock' }),
     bar: el('div', { className: 'chessBar' }, el('span')),
-    player: el('div', { className: 'chessPlayer' }, el('span', { className: 'dot' }), el('span', { className: 'name' })),
+    player: el('div', { className: 'chessPlayer' },
+      el('span', { className: 'dot' }), el('span', { className: 'name' }), el('span', { className: 'checks' })),
+    pocket: el('div', { className: 'chessPocket', hidden: true }),
   });
   const top = side();
   const bottom = side();
@@ -182,7 +301,7 @@ function mount(container, ctx) {
     el('div', { className: 'chessSide' },
       el('div', { className: 'chessCard chessInfo' }, timeEl, namesEl, watchersEl, resultEl),
       chatCard),
-    el('div', { className: 'chessTable' }, boardEl),
+    el('div', { className: 'chessTable' }, top.pocket, boardEl, bottom.pocket),
     el('div', { className: 'chessControls' },
       top.material, top.clock,
       el('div', { className: 'chessCard chessPanel' },
@@ -200,10 +319,15 @@ function mount(container, ctx) {
   let replay = { id: null, states: [] }; // the position after each move of one game
   let shown = { id: null, ply: 0 }; // what the board showed last
   let chatMessages = [];
+  let inHand = null; // the pocket piece picked up to be dropped
 
   const board = createBoard(boardEl, {
     onMove: (move) => ctx.send({ action: 'move', ...move }),
     choosePromotion,
+    onDropSelected: (type) => {
+      inHand = type;
+      for (const slot of bottom.pocket.children) slot.classList.toggle('selected', slot.dataset.type === type);
+    },
   });
 
   function choosePromotion(types, seat) {
@@ -230,7 +354,9 @@ function mount(container, ctx) {
     const same = Boolean(prev && prev.id === next.id);
     if (same && next.moves.length > prev.moves.length) {
       const san = next.moves[next.moves.length - 1];
-      ctx.play(/[+#]/.test(san) ? 'check' : san.includes('x') ? 'capture' : 'move');
+      // Every capture is an explosion where captures explode.
+      if (!san.includes('x')) ctx.play('move');
+      else ctx.play(variants[next.variant].explosions ? 'explosion' : 'capture');
     }
     if (same && next.over && !prev.over) ctx.play('end', 0.3);
     const offered = (g) => g.you !== null && g.drawOffer !== null && g.drawOffer !== g.you;
@@ -246,7 +372,7 @@ function mount(container, ctx) {
   // The server sends the moves; replaying them gives every position of the
   // game, which is what lets the player step back through it.
   function positions(variant) {
-    if (replay.id !== game.id) replay = { id: game.id, states: [createGame(variant)] };
+    if (replay.id !== game.id) replay = { id: game.id, states: [createGame(variant, game.start ?? undefined)] };
     const { states } = replay;
     for (let i = states.length - 1; i < game.played.length; i++) states.push(applyMove(states[i], game.played[i]));
     return states;
@@ -299,6 +425,7 @@ function mount(container, ctx) {
       seat: bottomSeat(),
       lastMove: ply ? game.played[ply - 1] : null,
       checked: inCheck(state, team) ? kingSquares(state, team) : [],
+      marked: markedSquares(variant),
       mode,
       // One step forward or back slides; a longer jump just appears.
       animate: shown.id === game.id && Math.abs(ply - shown.ply) <= 1,
@@ -310,12 +437,17 @@ function mount(container, ctx) {
       where.player.querySelector('.dot').className = `dot ${game.connected[seat] ? 'online' : 'offline'}`;
       where.player.querySelector('.dot').hidden = !live;
       where.player.querySelector('.name').textContent = game.players[seat];
+      where.player.querySelector('.checks').textContent = state.checks
+        ? `${state.checks[teamOf(variant, seat)]} of ${variant.checkLimit} checks` : '';
       where.clock.classList.toggle('active', live && mover === seat);
       where.clock.dataset.clock = variant.seats[seat].clock;
     }
     renderMaterial(state);
+    renderPockets(state, mode);
 
-    timeEl.textContent = `${formatTimeControl(game.options.minutes, game.options.increment)} • ${variant.name}`;
+    let about = `${formatTimeControl(game.options.minutes, game.options.increment)} • ${variant.name}`;
+    if (variant.starts) about += ` • Position ${game.start}`;
+    timeEl.replaceChildren(variantIcon(variant), about);
     namesEl.replaceChildren(...game.players.map((name, seat) => el('div', {},
       el('span', { className: `swatch seat${seat}` }), name)));
     watchersEl.hidden = !game.spectators || !live;
@@ -357,8 +489,42 @@ function mount(container, ctx) {
     renderActions();
   }
 
+  // The squares a king wins by reaching, where the variant has such squares.
+  function markedSquares(variant) {
+    if (variant.hill) return variant.hill;
+    if (variant.goalRank === undefined) return [];
+    return Array.from({ length: variant.width }, (_, x) => variant.goalRank * variant.width + x);
+  }
+
+  // The captured pieces each player may put back on the board, above and
+  // below it. Our own are picked up with a click or dragged onto a square.
+  function renderPockets(state, mode) {
+    for (const [where, seat] of [[top, topSeat()], [bottom, bottomSeat()]]) {
+      where.pocket.hidden = !state.pockets;
+      if (!state.pockets) continue;
+      const mine = where === bottom && mode === 'move';
+      where.pocket.replaceChildren(...POCKET_TYPES.map((type) => {
+        const count = state.pockets[seat][type] || 0;
+        const slot = el('button', { type: 'button', className: 'slot', disabled: !mine || !count });
+        slot.dataset.type = type;
+        slot.dataset.count = count;
+        slot.classList.toggle('empty', !count);
+        slot.classList.toggle('selected', mine && inHand === type);
+        slot.style.backgroundImage = `url("${pieceUrl(type, seat)}")`;
+        slot.addEventListener('pointerdown', (e) => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          board.startDrop(type, e);
+        });
+        return slot;
+      }));
+    }
+  }
+
   // Beside each clock: the pieces that player has more of, and their lead.
+  // It means little where captured pieces come back.
   function renderMaterial(state) {
+    top.material.hidden = bottom.material.hidden = Boolean(state.pockets);
     const counts = game.players.map(() => ({}));
     for (const p of state.board) if (p) counts[p.seat][p.type] = (counts[p.seat][p.type] || 0) + 1;
     for (const [where, seat, rival] of [[top, topSeat(), bottomSeat()], [bottom, bottomSeat(), topSeat()]]) {

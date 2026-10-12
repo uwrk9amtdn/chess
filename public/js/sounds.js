@@ -1,10 +1,25 @@
-// Sound effects, synthesised with the Web Audio API so there are no audio
-// files to ship. Each effect schedules a few short notes or knocks.
+// Sound effects. Each one is a recording from the Lichess standard sound set
+// in /sound; until a recording has loaded, or if it cannot be, the effect is
+// synthesised instead from a few short notes or knocks.
 
 const MUTE_KEY = 'chess.muted';
 
+// Which recording each effect plays. A check sounds like any other move, as
+// it does on Lichess.
+const FILES = {
+  move: 'Move',
+  check: 'Move',
+  capture: 'Capture',
+  start: 'GenericNotify',
+  end: 'GenericNotify',
+  notify: 'SocialNotify',
+  lowTime: 'LowTime',
+  explosion: 'Explosion',
+};
+
 let ctx = null;
 let noise = null;
+const recordings = new Map(); // file name -> decoded AudioBuffer
 let muted = false;
 try {
   muted = localStorage.getItem(MUTE_KEY) === '1';
@@ -19,9 +34,23 @@ function context() {
     noise = ctx.createBuffer(1, length, ctx.sampleRate);
     const data = noise.getChannelData(0);
     for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+    for (const file of new Set(Object.values(FILES))) loadRecording(file);
   }
   return ctx;
 }
+
+async function loadRecording(file) {
+  try {
+    const response = await fetch(`/sound/${file}.mp3`);
+    if (!response.ok) return;
+    recordings.set(file, await ctx.decodeAudioData(await response.arrayBuffer()));
+  } catch {
+    // The synthesised effect stands in.
+  }
+}
+
+// The effects that have their recording ready.
+export const recorded = () => Object.keys(FILES).filter((name) => recordings.has(FILES[name]));
 
 // Browsers keep audio suspended until the user interacts with the page.
 for (const event of ['pointerdown', 'keydown']) {
@@ -82,6 +111,10 @@ const SOUNDS = {
   // An invitation or a draw offer.
   notify: (t) => [880, 1175].forEach((f, i) => note(t + i * 0.12, f, 0.3)),
   lowTime: (t) => [0, 0.16].forEach((d) => note(t + d, 1245, 0.09, 0.07, 'square')),
+  explosion: (t) => {
+    knock(t, 500, 0.9, 0.3);
+    knock(t + 0.03, 220, 0.9, 0.5);
+  },
 };
 
 // `delay` is in seconds, for a sound that should follow another one.
@@ -91,7 +124,16 @@ export function play(name, delay = 0) {
     // Skip rather than queue while suspended, or everything missed would
     // play at once on the first click.
     if (context().state !== 'running') return;
-    SOUNDS[name](ctx.currentTime + 0.01 + delay);
+    const t = ctx.currentTime + 0.01 + delay;
+    const recording = recordings.get(FILES[name]);
+    if (!recording) {
+      SOUNDS[name](t);
+      return;
+    }
+    const source = ctx.createBufferSource();
+    source.buffer = recording;
+    source.connect(ctx.destination);
+    source.start(t);
   } catch {
     // Sound is a nicety; never let it break the game.
   }

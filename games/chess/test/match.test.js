@@ -82,6 +82,27 @@ test('draw offers and resignation', () => {
   assert.match(match.handle(0, { action: 'move', from: 12, to: 28 }), /over/);
 });
 
+test('variants: a random start position and drops from the pocket', () => {
+  const { match, changes } = newMatch({ variant: 'chess960' });
+  const snap = match.snapshot(0);
+  assert.ok(Number.isInteger(snap.start) && snap.start >= 0 && snap.start < 960);
+  assert.deepEqual(serialize(createGame(variants.chess960, snap.start)), snap.state);
+  assert.equal(newMatch().match.snapshot(0).start, null);
+  match.handle(0, { action: 'resign' });
+  assert.equal(changes.at(-1).over.winner, 1);
+
+  const house = newMatch({ variant: 'crazyhouse' });
+  for (const [seat, from, to] of [[0, 12, 28], [1, 51, 35], [0, 28, 35], [1, 59, 35]]) {
+    assert.equal(house.match.handle(seat, { action: 'move', from, to }), null);
+  }
+  assert.match(house.match.handle(0, { action: 'move', drop: 'q', to: 28 }), /Illegal/);
+  assert.equal(house.match.handle(0, { action: 'move', drop: 'p', to: 28 }), null);
+  const after = house.changes.at(-1);
+  assert.deepEqual([after.moves.at(-1), after.state.pockets[0].p, after.lastMove.to], ['P@e4', 0, 28]);
+  assert.deepEqual(JSON.parse(JSON.stringify(after.played.at(-1))), { to: 28, drop: 'p' });
+  house.match.handle(0, { action: 'resign' });
+});
+
 test('running out of time loses', async () => {
   const { match, changes } = newMatch({ minutes: 0.002, increment: 0 });
   match.handle(0, { action: 'move', from: 12, to: 28 });
@@ -120,5 +141,7 @@ test('a 16x16 game through the lobby', async (t) => {
   const get = async (path) => (await fetch(`http://localhost:${server.port}${path}`)).status;
   assert.equal(await get('/games/chess/shared/engine.js'), 200);
   assert.equal(await get('/games/chess/client/index.js'), 200);
+  const font = await fetch(`http://localhost:${server.port}/games/chess/client/font/lichess.woff2`);
+  assert.deepEqual([font.status, font.headers.get('content-type')], [200, 'font/woff2']);
   assert.equal(await get('/games/chess/server/match.js'), 404);
 });

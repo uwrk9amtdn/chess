@@ -5,7 +5,7 @@
 // from one position to the next, so moving it is a change of `transform` that
 // CSS animates.
 
-import { legalMoves, premoveTargets, applyMove, squareName } from '../shared/engine.js';
+import { legalMoves, legalDrops, premoveTargets, applyMove, squareName } from '../shared/engine.js';
 
 // The piece images are named like wK.svg and bQ.svg; even seats play white.
 const COLOURS = ['w', 'b'];
@@ -42,16 +42,19 @@ export function drawThumbnail(root, { variant, pieces, lastMove, checked }) {
   root.replaceChildren(...squares);
 }
 
-// `onMove({ from, to, promotion })` is called when the player makes a move.
+// `onMove({ from, to, promotion })` is called when the player makes a move;
+// putting a piece back from the pocket is `onMove({ drop, to })`.
 // `choosePromotion(types, seat)` resolves to the chosen piece type, or null.
-export function createBoard(root, { onMove, choosePromotion }) {
+// `onDropSelected(type)` says which pocket piece is in hand, or null.
+export function createBoard(root, { onMove, choosePromotion, onDropSelected = () => {} }) {
   const squaresEl = div('chessSquares');
   const piecesEl = div('chessPieces');
   root.replaceChildren(squaresEl, piecesEl);
 
-  // { state, seat, lastMove, checked, mode, animate }. `mode` is 'move' on the
-  // player's turn, 'premove' while waiting for it and 'none' when the board
-  // is only for looking at.
+  // { state, seat, lastMove, checked, marked, mode, animate }. `mode` is
+  // 'move' on the player's turn, 'premove' while waiting for it and 'none'
+  // when the board is only for looking at. `marked` lists squares that matter
+  // in the variant, such as the ones a king wins by reaching.
   let view = null;
   let layout = ''; // size and orientation the squares were built for
   let flipped = false;
@@ -61,6 +64,8 @@ export function createBoard(root, { onMove, choosePromotion }) {
   let targets = [];
   let drag = null;
   let premove = null; // { from, to } waiting for the player's turn
+  let dropType = null; // the pocket piece about to be put on the board
+  let ghost = null; // a pocket piece being dragged: { id, el, x, y, moved }
 
   // Column and row on screen of a board index.
   function cell(idx) {
@@ -72,8 +77,9 @@ export function createBoard(root, { onMove, choosePromotion }) {
 
   function buildSquares() {
     const { width: w, height: h, seats } = view.state.variant;
-    // Each player sees their own army at the bottom.
-    flipped = seats[view.seat].forward[1] < 0;
+    // Each player sees their own army at the bottom, unless the variant has
+    // everyone look from the same side.
+    flipped = !view.state.variant.fixedView && seats[view.seat].forward[1] < 0;
     const key = `${w}x${h}:${flipped}`;
     if (key === layout) return;
     layout = key;
@@ -111,11 +117,12 @@ export function createBoard(root, { onMove, choosePromotion }) {
 
   // Highlights only; the pieces are handled by syncPieces.
   function paint() {
-    const { state, seat, lastMove, checked, mode } = view;
+    const { state, seat, lastMove, checked, marked = [], mode } = view;
     root.classList.toggle('interactive', mode !== 'none');
     root.classList.toggle('premoving', mode === 'premove');
     squares.forEach((sq, idx) => {
       const classes = ['sq', sq.dataset.shade];
+      if (marked.includes(idx)) classes.push('marked');
       if (lastMove && (lastMove.from === idx || lastMove.to === idx)) classes.push('last');
       if (idx === selected) classes.push('selected');
       if (checked.includes(idx)) classes.push('check');
@@ -216,7 +223,14 @@ export function createBoard(root, { onMove, choosePromotion }) {
     return premoveTargets(view.state, idx).map((to) => ({ to, capture: board[to] ? to : undefined }));
   }
 
+  function setDrop(type) {
+    if (dropType === type) return;
+    dropType = type;
+    onDropSelected(type);
+  }
+
   function select(idx) {
+    setDrop(null);
     selected = idx;
     targets = idx === null ? [] : movesFrom(idx);
     paint();
@@ -284,11 +298,51 @@ export function createBoard(root, { onMove, choosePromotion }) {
     playLocal({ from, to, promotion }, !dropped);
   }
 
+  function playDrop(to) {
+    const move = { drop: dropType, to };
+    setDrop(null);
+    targets = [];
+    playLocal(move, false);
+  }
+
+  // A pocket piece follows the pointer until it is let go: over a square it
+  // may go on, it is dropped there.
+  function moveGhost(e) {
+    if (!ghost || e.pointerId !== ghost.id) return;
+    if (!ghost.moved && Math.hypot(e.clientX - ghost.x, e.clientY - ghost.y) < DRAG_THRESHOLD_PX) return;
+    if (!ghost.moved) {
+      ghost.moved = true;
+      const size = squares[0].getBoundingClientRect().width;
+      ghost.el.style.width = ghost.el.style.height = `${size}px`;
+      document.body.append(ghost.el);
+    }
+    ghost.el.style.transform = `translate(${e.clientX}px, ${e.clientY}px) translate(-50%, -50%) scale(1.15)`;
+  }
+
+  function endGhost(e) {
+    if (!ghost || e.pointerId !== ghost.id) return;
+    const { moved, el } = ghost;
+    ghost = null;
+    el.remove();
+    window.removeEventListener('pointermove', moveGhost);
+    window.removeEventListener('pointerup', endGhost);
+    window.removeEventListener('pointercancel', endGhost);
+    // A press without movement is a click: the piece stays in hand.
+    if (!moved || dropType === null) return;
+    const sq = e.type === 'pointerup' && document.elementFromPoint(e.clientX, e.clientY)?.closest('.sq');
+    const idx = sq && root.contains(sq) ? Number(sq.dataset.idx) : null;
+    if (idx !== null && targets.some((m) => m.to === idx)) playDrop(idx);
+  }
+
   root.addEventListener('pointerdown', (e) => {
     if (!view || view.mode === 'none' || e.button !== 0) return;
     const sq = e.target.closest('.sq');
     if (!sq) return;
     const idx = Number(sq.dataset.idx);
+    if (dropType !== null && targets.some((m) => m.to === idx)) {
+      playDrop(idx);
+      return;
+    }
     if (selected !== null && targets.some((m) => m.to === idx)) {
       choose(idx, false);
       return;
@@ -357,6 +411,9 @@ export function createBoard(root, { onMove, choosePromotion }) {
         selected = null;
       }
       targets = selected === null ? [] : movesFrom(selected);
+      // A pocket piece stays in hand only while it can still be dropped.
+      if (dropType !== null && view.mode === 'move') targets = legalDrops(view.state, dropType);
+      if (dropType !== null && !targets.length) setDrop(null);
 
       if (view.mode === 'move' && premove) {
         const { from, to } = premove;
@@ -372,6 +429,24 @@ export function createBoard(root, { onMove, choosePromotion }) {
         }
       }
       paint();
+    },
+    // Takes a piece from the pocket in hand: the next square clicked is where
+    // it goes. With the pointer event that picked it up, it can be dragged.
+    startDrop(type, e) {
+      if (!view || view.mode !== 'move') return;
+      premove = null;
+      dropDrag(false);
+      selected = null;
+      setDrop(type);
+      targets = legalDrops(view.state, type);
+      paint();
+      if (!e || !targets.length) return;
+      const el = div('chessGhost');
+      el.style.backgroundImage = `url("${pieceUrl(type, view.seat)}")`;
+      ghost = { id: e.pointerId, el, x: e.clientX, y: e.clientY, moved: false };
+      window.addEventListener('pointermove', moveGhost);
+      window.addEventListener('pointerup', endGhost);
+      window.addEventListener('pointercancel', endGhost);
     },
     cancelPremove() {
       if (!premove) return;

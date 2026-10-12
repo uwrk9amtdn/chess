@@ -70,7 +70,7 @@ Default-export an object with:
 `ctx` provides:
 
 - `ctx.send({ action: 'move', ... })`: sends an action to your match's `handle`.
-- `ctx.play(name, delay?)`: plays a sound from `public/js/sounds.js` (`move`, `capture`, `check`, `end`, `notify`, `lowTime`). The platform already plays `start` for a new match and `notify` for invitations.
+- `ctx.play(name, delay?)`: plays a sound from `public/js/sounds.js` (`move`, `capture`, `check`, `explosion`, `end`, `notify`, `lowTime`). The platform already plays `start` for a new match and `notify` for invitations.
 - `ctx.sendChat(text)`: says something to the other players of the match (up to 140 characters). The platform keeps the conversation, also after the match is over, and gives it back through the view's `chat`. It plays no sound for a message; that is up to the game.
 - `ctx.toast(text)`: shows a short notice.
 

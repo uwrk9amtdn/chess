@@ -1,9 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createGame, legalMoves, applyMove, status, toSan, findMove, fromFEN, premoveTargets,
+  createGame, legalMoves, legalDrops, applyMove, status, toSan, findMove, fromFEN, premoveTargets, inCheck,
+  canWinOnTime,
 } from '../shared/engine.js';
-import { standard, double, facingSetup } from '../shared/variants.js';
+import {
+  standard, double, facingSetup, chess960, kingOfTheHill, threeCheck, antichess, atomic, horde, racingKings,
+  crazyhouse, variants,
+} from '../shared/variants.js';
+import { chess960Rank } from '../shared/chess960.js';
 
 function perft(state, depth) {
   const moves = legalMoves(state);
@@ -170,4 +175,195 @@ test('premove targets follow the geometry of the piece, not the position', () =>
   assert.deepEqual(names('e1'), ['c1', 'd1', 'd2', 'e2', 'f1', 'f2', 'g1']);
   assert.deepEqual(names('g8'), ['e7', 'f6', 'h6']);
   assert.deepEqual(names('e4'), []);
+});
+
+// ---- variants ----
+
+// Node counts from the start position, as published for each variant (they
+// are the figures the Lichess and Fairy-Stockfish move generators agree on).
+const VARIANT_PERFT = [
+  [chess960, [20, 400, 8902, 197281]],
+  [kingOfTheHill, [20, 400, 8902, 197281]],
+  [threeCheck, [20, 400, 8902, 197281]],
+  [crazyhouse, [20, 400, 8902, 197281]],
+  [atomic, [20, 400, 8902, 197326]],
+  [antichess, [20, 400, 8067, 153299]],
+  [horde, [8, 128, 1274, 23310]],
+  [racingKings, [21, 421, 11264, 296242]],
+];
+
+for (const [variant, counts] of VARIANT_PERFT) {
+  test(`perft: ${variant.name}`, () => {
+    counts.forEach((expected, i) => assert.equal(perft(createGame(variant), i + 1), expected, `depth ${i + 1}`));
+  });
+}
+
+test('every variant has what the list of variants shows', () => {
+  for (const v of Object.values(variants)) assert.ok(v.name && v.icon && v.description, v.id);
+  assert.equal(Object.keys(variants).length, 10);
+});
+
+test('chess960: the 960 starting positions', () => {
+  const seen = new Set();
+  for (let n = 0; n < 960; n++) {
+    const rank = chess960Rank(n);
+    const files = (type) => rank.flatMap((t, x) => (t === type ? [x] : []));
+    assert.deepEqual([...rank].sort().join(''), 'bbknnqrr');
+    assert.notEqual(files('b')[0] % 2, files('b')[1] % 2, `bishops of position ${n}`);
+    assert.ok(files('r')[0] < files('k')[0] && files('k')[0] < files('r')[1], `king of position ${n}`);
+    seen.add(rank.join(''));
+  }
+  assert.equal(seen.size, 960);
+  assert.equal(chess960Rank(518).join(''), 'rnbqkbnr');
+  assert.deepEqual(createGame(chess960).board, createGame(standard).board);
+  assert.notDeepEqual(createGame(chess960, 0).board, createGame(standard).board);
+});
+
+test('chess960: castling is the king going to its rook', () => {
+  // King on b1: it ends on c1 or g1 all the same, the rook on d1 or f1.
+  const state = fromFEN('4k3/8/8/8/8/8/8/RK5R w KQ - 0 1', chess960);
+  const long = findMove(state, { from: sq('b1'), to: sq('a1') });
+  const short = findMove(state, { from: sq('b1'), to: sq('h1') });
+  assert.deepEqual([toSan(state, long), toSan(state, short)], ['O-O-O', 'O-O']);
+  const types = (s, ...names) => names.map((n) => s.board[sq(n)]?.type ?? '-').join('');
+  assert.equal(types(applyMove(state, long), 'a1', 'b1', 'c1', 'd1'), '--kr');
+  assert.equal(types(applyMove(state, short), 'b1', 'f1', 'g1', 'h1'), '-rk-');
+  assert.ok(premoveTargets(state, sq('b1')).includes(sq('h1')));
+
+  // King and rook next to each other simply change places.
+  const swap = createGame({ ...chess960, setupFor: null, setup: [
+    { type: 'k', seat: 0, x: 5, y: 0 }, { type: 'r', seat: 0, x: 6, y: 0 }, { type: 'k', seat: 1, x: 0, y: 7 },
+  ] });
+  assert.equal(types(applyMove(swap, { from: sq('f1'), to: sq('g1') }), 'f1', 'g1'), 'rk');
+
+  // Not through a piece, and not across an attacked square.
+  assert.equal(findMove(fromFEN('k7/8/8/8/8/8/8/RK3N1R w KQ - 0 1', chess960), { from: sq('b1'), to: sq('h1') }), null);
+  assert.equal(findMove(fromFEN('k3r3/8/8/8/8/8/8/RK5R w KQ - 0 1', chess960), { from: sq('b1'), to: sq('h1') }), null);
+});
+
+test('king of the hill: a king in the centre wins', () => {
+  const state = fromFEN('7k/8/8/8/8/3K4/8/8 w - - 0 1', kingOfTheHill);
+  assert.equal(status(state).over, false);
+  const won = applyMove(state, { from: sq('d3'), to: sq('d4') });
+  assert.deepEqual(status(won), { over: true, reason: 'hill', winner: 0, check: false });
+  assert.deepEqual(legalMoves(won), []);
+});
+
+test('three-check: the third check wins', () => {
+  let state = playAll(createGame(threeCheck), 'e2e4 f7f6 d1h5 g7g6 h5g6');
+  assert.deepEqual(state.checks, [2, 0]);
+  assert.equal(status(state).over, false);
+  state = playAll(state, 'h7g6 f1b5 a7a6 b5d7');
+  assert.deepEqual(status(state), { over: true, reason: 'checks', winner: 0, check: true });
+});
+
+test('antichess: captures are forced and running out of pieces wins', () => {
+  const state = playAll(createGame(antichess), 'e2e3 b7b5');
+  assert.deepEqual(legalMoves(state).map((m) => toSan(state, m)), ['Bxb5']);
+  assert.equal(legalMoves(state, sq('g1')).length, 0);
+  // There is no check, no castling, and a pawn may become a king.
+  const open = fromFEN('r3k2r/8/8/8/8/8/P6p/R3K2R w KQkq - 0 1', antichess);
+  assert.equal(inCheck(open, 0), false);
+  assert.ok(legalMoves(open).every((m) => !m.castle));
+  assert.ok(applyMove(fromFEN('8/P7/8/8/8/8/8/7r w - - 0 1', antichess), { from: sq('a7'), to: sq('a8'), promotion: 'k' }));
+  assert.deepEqual(status(fromFEN('8/8/8/8/8/8/8/7r w - - 0 1', antichess)),
+    { over: true, reason: 'antichess', winner: 0, check: false });
+  // So does being left with no move.
+  assert.equal(status(fromFEN('8/8/8/8/8/7p/7P/8 w - - 0 1', antichess)).winner, 0);
+});
+
+test('atomic: captures explode', () => {
+  let state = playAll(createGame(atomic), 'g1f3 e7e5 f3e5');
+  assert.equal(state.board[sq('e5')], null);
+  assert.equal(state.board.filter(Boolean).length, 30);
+  // Taking on f7 blows up the king next to it, with the bishop and the knight;
+  // the pawn beside it and the queen two files away are untouched.
+  state = playAll(state, 'a7a6 b1c3 a6a5 c3e4 a5a4 e4g5 a4a3 g5f7');
+  assert.deepEqual(status(state), { over: true, reason: 'explosion', winner: 0, check: false });
+  assert.deepEqual(['d8', 'e8', 'f8', 'g8', 'f7', 'g7'].map((n) => state.board[sq(n)]?.type ?? '-'),
+    ['q', '-', '-', '-', '-', 'p']);
+  assert.deepEqual(legalMoves(state), []);
+
+  // Kings that touch are not in check, and a king never captures.
+  const touching = fromFEN('r7/8/8/8/8/8/1k6/K7 w - - 0 1', atomic);
+  assert.equal(inCheck(touching, 0), false);
+  assert.ok(legalMoves(touching).every((m) => m.capture === undefined));
+  assert.equal(inCheck(fromFEN('r7/8/8/8/8/1k6/8/K7 w - - 0 1', atomic), 0), true);
+  // A capture that would blow up your own king is not allowed.
+  const own = fromFEN('7k/8/8/8/8/8/1p6/KR6 w - - 0 1', atomic);
+  assert.equal(findMove(own, { from: sq('b1'), to: sq('b2') }), null);
+});
+
+test('horde: pawns against an army', () => {
+  const state = createGame(horde);
+  assert.equal(state.board.filter((p) => p && p.seat === 0).length, 36);
+  assert.equal(status(state).over, false);
+  // From the first rank a pawn may go two squares, but not be taken in passing.
+  const lone = fromFEN('k7/8/8/8/8/8/8/P7 w - - 0 1', horde);
+  const jumped = applyMove(lone, { from: sq('a1'), to: sq('a3') });
+  assert.equal(jumped.ep, null);
+  assert.ok(applyMove(lone, { from: sq('a1'), to: sq('a2') }));
+  assert.ok(applyMove(fromFEN('k7/8/8/8/8/8/P7/8 w - - 0 1', horde), { from: sq('a2'), to: sq('a4') }).ep);
+  assert.deepEqual(status(fromFEN('4k3/8/8/8/8/8/8/8 w - - 0 1', horde)),
+    { over: true, reason: 'horde', winner: 1, check: false });
+  assert.equal(status(fromFEN('k7/P7/1P6/8/8/8/8/8 b - - 0 1', horde)).over, false);
+  assert.equal(status(fromFEN('k7/1PP5/PP6/8/8/8/8/8 b - - 0 1', horde)).reason, 'checkmate');
+});
+
+test('racing kings: first to the last rank, with one move to draw level', () => {
+  const start = createGame(racingKings);
+  assert.equal(inCheck(start, 0) || inCheck(start, 1), false);
+  // No move may give check: the knight on e2 cannot go to c3, next to nothing
+  // but checking the king on a2.
+  assert.equal(findMove(start, { from: sq('e2'), to: sq('c3') }), null);
+
+  const race = fromFEN('8/k5K1/8/8/8/8/8/8 w - - 0 1', racingKings);
+  const ahead = applyMove(race, { from: sq('g7'), to: sq('g8') });
+  assert.equal(status(ahead).over, false);
+  assert.deepEqual(status(applyMove(ahead, { from: sq('a7'), to: sq('a8') })),
+    { over: true, reason: 'goal', winner: null, check: false });
+  assert.equal(status(applyMove(ahead, { from: sq('a7'), to: sq('a6') })).winner, 0);
+  // Too far behind to follow: the race is over at once.
+  const far = fromFEN('8/6K1/8/8/8/8/k7/8 w - - 0 1', racingKings);
+  assert.equal(status(applyMove(far, { from: sq('g7'), to: sq('h8') })).winner, 0);
+  // Black arriving first wins without White getting another move.
+  const black = fromFEN('8/k7/8/8/8/8/6K1/8 b - - 0 1', racingKings);
+  assert.equal(status(applyMove(black, { from: sq('a7'), to: sq('b8') })).winner, 1);
+});
+
+test('crazyhouse: captured pieces come back', () => {
+  let state = playAll(createGame(crazyhouse), 'e2e4 d7d5 e4d5 d8d5');
+  assert.deepEqual(state.pockets, [{ p: 1 }, { p: 1 }]);
+  const drops = legalDrops(state, 'p');
+  assert.ok(drops.length > 0 && drops.every((m) => m.to >= 8 && m.to < 56));
+  assert.deepEqual(legalDrops(state, 'n'), []);
+  const drop = findMove(state, { drop: 'p', to: sq('e4') });
+  assert.equal(toSan(state, drop), 'P@e4');
+  state = applyMove(state, drop);
+  assert.deepEqual([state.board[sq('e4')].type, state.pockets[0].p], ['p', 0]);
+  assert.equal(findMove(state, { drop: 'q', to: sq('e5') }), null);
+  // A pawn dropped on its second rank may still go two squares.
+  const second = fromFEN('4k3/8/8/8/8/8/8/4K3 w - - 0 1', crazyhouse);
+  second.pockets = [{ p: 1 }, {}];
+  const dropped = applyMove(applyMove(second, { drop: 'p', to: sq('a2') }), { from: sq('e8'), to: sq('e7') });
+  assert.ok(findMove(dropped, { from: sq('a2'), to: sq('a4') }));
+
+  // A promoted piece goes into the pocket as the pawn it was.
+  let promo = fromFEN('1r2k3/P7/8/8/8/8/8/4K3 w - - 0 1', crazyhouse);
+  promo = playAll(promo, 'a7a8q b8a8');
+  assert.deepEqual(promo.pockets[1], { p: 1 });
+
+  // A drop can answer a check that nothing else can.
+  const mated = fromFEN('7k/8/8/8/8/8/PP6/K6r w - - 0 1', crazyhouse);
+  assert.equal(status(mated).reason, 'checkmate');
+  mated.pockets = [{ n: 1 }, {}];
+  assert.equal(status(mated).over, false);
+  assert.ok(legalMoves(mated).every((m) => m.drop === 'n'));
+});
+
+test('who can still win when the other side runs out of time', () => {
+  const bare = '8/8/4k3/8/8/3K4/8/8 w - - 0 1';
+  assert.equal(canWinOnTime(fromFEN(bare, standard), 0), false);
+  assert.equal(canWinOnTime(fromFEN('8/8/4k3/8/8/3KP3/8/8 w - - 0 1', standard), 0), true);
+  assert.equal(canWinOnTime(fromFEN(bare, racingKings), 0), true);
 });

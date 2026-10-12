@@ -309,6 +309,8 @@ test('only the browser parts of a game are served', async (t) => {
   t.after(() => server.close());
   const get = async (path) => (await fetch(`http://localhost:${server.port}${path}`)).status;
   assert.equal(await get('/'), 200);
+  const type = async (path) => (await fetch(`http://localhost:${server.port}${path}`)).headers.get('content-type');
+  assert.equal(await type('/sound/Move.mp3'), 'audio/mpeg');
   assert.equal(await get('/games/pick/meta.js'), 200);
   assert.equal(await get('/games/pick/server/index.js'), 404);
   assert.equal(await get('/games/pick/client/%2e%2e/server/index.js'), 404);

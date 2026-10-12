@@ -3,7 +3,7 @@
 
 import { randomUUID } from 'node:crypto';
 import {
-  createGame, findMove, applyMove, status, toSan, seatToMove, teamOf, opposingTeam, inCheck, serialize,
+  createGame, findMove, applyMove, status, toSan, seatToMove, teamOf, opposingTeam, inCheck, serialize, canWinOnTime,
 } from '../shared/engine.js';
 import { variants } from '../shared/variants.js';
 
@@ -21,7 +21,9 @@ export class ChessMatch {
     this.initialMs = initialMs;
     this.incrementMs = options.increment * 1000;
     this.onChange = onChange;
-    this.state = createGame(variant);
+    // Variants with several starting positions get one at random.
+    this.start = variant.starts ? Math.floor(Math.random() * variant.starts) : null;
+    this.state = createGame(variant, this.start ?? undefined);
     // Remaining time per clock as of `turnStartedAt`. Seats sharing a clock
     // index (team mates) share the time.
     const clockCount = Math.max(...variant.seats.map((s) => s.clock)) + 1;
@@ -56,11 +58,8 @@ export class ChessMatch {
     const loser = teamOf(this.variant, seatToMove(this.state));
     const winner = opposingTeam(this.variant, loser);
     this.clocks[this.runningClock()] = 0;
-    // Running out of time against a side that has only kings left is a draw.
-    const canMate = this.state.board.some(
-      (p) => p && p.type !== 'k' && teamOf(this.variant, p.seat) === winner,
-    );
-    this.finish('timeout', canMate ? winner : null);
+    // Running out of time against a side that could never win is a draw.
+    this.finish('timeout', canWinOnTime(this.state, winner) ? winner : null);
   }
 
   finish(reason, winner) {
@@ -104,7 +103,7 @@ export class ChessMatch {
     }
     this.clocks[c] = left + this.incrementMs;
     this.moves.push(toSan(this.state, move));
-    this.played.push({ from: move.from, to: move.to, promotion: move.promotion });
+    this.played.push({ from: move.from, to: move.to, promotion: move.promotion, drop: move.drop });
     this.clockHistory.push(this.clocks.slice());
     this.state = applyMove(this.state, move);
     this.lastMove = { from: move.from, to: move.to };
@@ -168,6 +167,7 @@ export class ChessMatch {
     return {
       id: this.id,
       variant: this.variant.id,
+      start: this.start,
       players: this.players,
       you: seat,
       options: this.options,
