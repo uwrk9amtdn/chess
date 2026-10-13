@@ -401,15 +401,18 @@ function mount(container, ctx) {
     });
   }
 
+  // Plays the sound of the move that led to the position after `ply` moves.
+  function playMove(g, ply) {
+    const san = g.moves[ply - 1];
+    // Every capture is an explosion where captures explode.
+    if (!san.includes('x')) ctx.play('move');
+    else ctx.play(variants[g.variant].explosions ? 'explosion' : 'capture');
+  }
+
   // Plays the sounds for whatever changed between two snapshots of one game.
   function announce(prev, next) {
     const same = Boolean(prev && prev.id === next.id);
-    if (same && next.moves.length > prev.moves.length) {
-      const san = next.moves[next.moves.length - 1];
-      // Every capture is an explosion where captures explode.
-      if (!san.includes('x')) ctx.play('move');
-      else ctx.play(variants[next.variant].explosions ? 'explosion' : 'capture');
-    }
+    if (same && next.moves.length > prev.moves.length) playMove(next, next.moves.length);
     if (same && next.over && !prev.over) ctx.play('end', 0.3);
     const offered = (g) => g.you !== null && g.drawOffer !== null && g.drawOffer !== g.you;
     if (offered(next) && !(same && offered(prev))) ctx.play('notify');
@@ -434,6 +437,8 @@ function mount(container, ctx) {
   function go(ply) {
     const total = game.played.length;
     const clamped = Math.max(0, Math.min(total, ply));
+    // Stepping through the game sounds like the moves being played.
+    if (clamped && clamped !== (viewPly ?? total)) playMove(game, clamped);
     viewPly = clamped === total ? null : clamped;
     render();
   }
