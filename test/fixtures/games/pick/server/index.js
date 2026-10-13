@@ -6,8 +6,8 @@ import { randomUUID } from 'node:crypto';
 import meta from '../meta.js';
 
 class PickMatch {
-  constructor({ players, options, onChange }) {
-    Object.assign(this, { id: randomUUID(), players, options, onChange, over: null });
+  constructor({ players, options, bots, onChange }) {
+    Object.assign(this, { id: randomUUID(), players, options, bots, onChange, over: null });
     this.connected = players.map(() => true);
   }
 
@@ -44,8 +44,8 @@ class PickMatch {
   }
 
   snapshot(seat) {
-    const { id, players, options, over, connected, spectators = 0, pokes = 0 } = this;
-    return { id, players, you: seat, options, over, connected, spectators, pokes };
+    const { id, players, options, bots, over, connected, spectators = 0, pokes = 0 } = this;
+    return { id, players, bots, you: seat, options, over, connected, spectators, pokes };
   }
 }
 
@@ -55,6 +55,10 @@ export default {
     const { prize = 1 } = options;
     if (!Number.isInteger(prize) || prize < 1 || prize > 3) return { error: 'The prize must be 1 to 3.' };
     return { options: { prize } };
+  },
+  validateBot(bot) {
+    if (bot.mood !== 'calm' && bot.mood !== 'wild') return { error: 'The bot must be calm or wild.' };
+    return { bot: { mood: bot.mood }, name: `${bot.mood} bot` };
   },
   createMatch: (args) => new PickMatch(args),
   preview: (snapshot) => ({ claimed: Boolean(snapshot.over), pokes: snapshot.pokes }),

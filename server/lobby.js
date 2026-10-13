@@ -2,7 +2,7 @@
 // knows nothing about any particular game: it asks the game to check an
 // invitation's options, to create a match, and forwards the players' actions.
 //
-// Client -> server: join, invite, cancel, accept, decline, action, chat,
+// Client -> server: join, invite, cancel, accept, decline, bot, action, chat,
 //                   watch, unwatch, follow, unfollow, history, review
 // Server -> client: joined, joinError, users, matches, invite, inviteSent,
 //                   inviteClosed, match, preview, chat, chatLog, history, error
@@ -112,6 +112,7 @@ export class Lobby {
       case 'cancel': return this.answerInvite(user, msg.id, 'cancelled');
       case 'decline': return this.answerInvite(user, msg.id, 'declined');
       case 'accept': return this.accept(user, msg.id);
+      case 'bot': return this.playBot(user, msg);
       case 'chat': return this.chat(user, msg.text);
       case 'watch': return this.watch(user, msg.id);
       case 'unwatch': return this.stopWatching(user);
@@ -123,7 +124,9 @@ export class Lobby {
         return;
       case 'action': {
         if (!user.match) return;
-        const error = user.match.handle(user.seat, msg);
+        // A player whose browser thinks for a bot also sends that seat's actions.
+        const seat = msg.bot === true && user.botSeat !== null ? user.botSeat : user.seat;
+        const error = user.match.handle(seat, msg);
         if (error) this.send(user, { type: 'error', message: error });
       }
     }
@@ -153,7 +156,8 @@ export class Lobby {
       clearTimeout(user.dropTimer);
     } else {
       user = {
-        name, key, token: randomUUID(), conn: null, match: null, gameId: null, seat: null, dropTimer: null,
+        name, key, token: randomUUID(), conn: null, match: null, gameId: null, seat: null, botSeat: null,
+        dropTimer: null,
         room: null, lastChatAt: 0, watching: null, following: null,
       };
       this.users.set(key, user);
@@ -259,11 +263,37 @@ export class Lobby {
     this.startMatch(Math.random() < 0.5 ? [from, to] : [to, from], invite);
   }
 
-  // `seated` lists the users in seat order.
-  startMatch(seated, { game, options }) {
+  // A match against a bot: the game says what a bot may be and what it is
+  // called, and the player's own browser plays its moves. Nobody is behind the
+  // bot's seat, so its place in `seated` is taken by a stand-in that is not in
+  // `users` and has no connection.
+  playBot(user, msg) {
+    const fail = (message) => this.send(user, { type: 'error', message });
+    const game = typeof msg.game === 'string' ? this.games.get(msg.game) : undefined;
+    if (!game) return fail('Unknown game.');
+    if (!game.validateBot) return fail('This game cannot be played against the computer.');
+    if (user.match) return fail('You are already in a game.');
+    const requested = msg.options && typeof msg.options === 'object' ? msg.options : {};
+    const { options, error } = game.validateOptions(requested, this.limits[game.meta.id]);
+    if (error) return fail(error);
+    const wanted = msg.bot && typeof msg.bot === 'object' ? msg.bot : {};
+    const { bot, name, error: botError } = game.validateBot(wanted, options);
+    if (botError) return fail(botError);
+
+    this.closeInvitesOf(user, 'unavailable');
+    const seat = msg.seat === 0 || msg.seat === 1 ? msg.seat : Math.floor(Math.random() * 2);
+    const seated = [user, { name, bot: true, conn: null }];
+    if (seat === 1) seated.reverse();
+    this.startMatch(seated, { game, options }, seated.map((u) => (u.bot ? bot : null)));
+  }
+
+  // `seated` lists the users in seat order. `bots` has, for a seat played by
+  // a bot, what the game made of the request for one.
+  startMatch(seated, { game, options }, bots = seated.map(() => null)) {
     const match = game.createMatch({
       players: seated.map((u) => u.name),
       options,
+      bots,
       onChange: (m) => this.matchChanged(m, game, seated),
     });
     // The players of a match can talk to each other. The room outlives the
@@ -278,7 +308,10 @@ export class Lobby {
       u.match = match;
       u.gameId = game.meta.id;
       u.seat = seat;
+      u.botSeat = null;
     });
+    const botSeat = seated.findIndex((u) => u.bot);
+    if (botSeat !== -1) for (const u of seated) if (!u.bot) u.botSeat = botSeat;
     this.broadcastUsers();
     this.broadcastMatches();
     this.matchChanged(match, game, seated);
@@ -387,6 +420,7 @@ export class Lobby {
       u.match = null;
       u.gameId = null;
       u.seat = null;
+      u.botSeat = null;
     }
     for (const u of players) if (!u.conn) this.removeUser(u);
     this.broadcastUsers();

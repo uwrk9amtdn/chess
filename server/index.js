@@ -26,6 +26,7 @@ const TYPES = {
   '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
+  '.wasm': 'application/wasm',
 };
 
 // Maps a URL path to [directory it must stay inside, path within it].

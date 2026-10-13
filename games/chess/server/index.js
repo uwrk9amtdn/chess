@@ -1,7 +1,7 @@
 // Chess as the platform sees it. See games/README.md for the contract.
 
 import meta from '../meta.js';
-import { variants } from '../shared/variants.js';
+import { variants, BOT_LEVELS, STOCKFISH_VARIANTS } from '../shared/variants.js';
 import { deserialize, kingSquares, seatToMove, teamOf } from '../shared/engine.js';
 import { ChessMatch } from './match.js';
 
@@ -21,6 +21,14 @@ export default {
       return { error: `Choose ${minMinutes} to ${maxMinutes} minutes and 0 to ${maxIncrement} seconds increment.` };
     }
     return { options: { variant, minutes, increment } };
+  },
+
+  // A bot is { level }, 1 (weakest) to 8. Its name says which engine the
+  // player's browser will run for this variant (see client/bot).
+  validateBot(bot, options) {
+    const { level } = bot;
+    if (!Number.isInteger(level) || level < 1 || level > BOT_LEVELS) return { error: `Choose a level from 1 to ${BOT_LEVELS}.` };
+    return { bot: { level }, name: `${STOCKFISH_VARIANTS.includes(options.variant) ? 'Stockfish' : 'Computer'} level ${level}` };
   },
 
   createMatch: (args) => new ChessMatch(args),

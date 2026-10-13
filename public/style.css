@@ -123,7 +123,8 @@ main { padding: 16px; min-width: 0; }
 #gameHint h2 { margin-top: 24px; }
 #onlyMineLabel { justify-self: center; display: flex; align-items: center; gap: 6px; font-size: 13px; }
 #onlyMine { accent-color: var(--accent); margin: 0; }
-#morePast { justify-self: center; }
+#morePast, #playBot { justify-self: center; }
+#playBot { padding: 8px 20px; }
 
 /* Matches to watch or look back at, one card each. */
 .matchGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; text-align: left; }

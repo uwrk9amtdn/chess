@@ -278,6 +278,7 @@ function render() {
   $('gameTitle').textContent = meta.name;
   $('gameDescription').textContent = meta.description;
   $('gameHint').hidden = Boolean(match);
+  $('playBot').hidden = !clients.get(route).botForm;
   if (!match) {
     renderLiveMatches();
     renderPastMatches();
@@ -292,14 +293,21 @@ function render() {
   if (over && !spectating()) {
     const rival = opponent();
     const free = users.some((u) => u.name === rival && u.status === 'idle');
-    $('rematch').disabled = !free || Boolean(outgoing);
+    // A bot is always free for another game.
+    $('rematch').disabled = botOf(match.snapshot) ? false : !free || Boolean(outgoing);
   }
 }
 
 const opponent = () => match.snapshot.players.find((_, seat) => seat !== match.snapshot.you);
+// What a game says about the bot in a match against one (see `bots` in
+// games/README.md), or undefined in a match between people.
+const botOf = (snapshot) => snapshot.bots?.find(Boolean);
 
 $('rematch').addEventListener('click', () => {
-  send({ type: 'invite', to: opponent(), game: match.game, options: match.snapshot.options });
+  const { options, you } = match.snapshot;
+  const bot = botOf(match.snapshot);
+  if (bot) send({ type: 'bot', game: match.game, options, bot, seat: you });
+  else send({ type: 'invite', to: opponent(), game: match.game, options });
 });
 $('closeMatch').addEventListener('click', () => {
   closeMatch();
@@ -427,6 +435,17 @@ function openInvite(name) {
   });
   $('inviteDialog').showModal();
 }
+// A game against the computer is set up in the same dialog and starts at once.
+$('playBot').addEventListener('click', () => {
+  const game = route;
+  $('inviteTitle').textContent = `Play ${games.get(game).name} against the computer`;
+  $('inviteForm').replaceChildren();
+  clients.get(game).botForm($('inviteForm'), (request) => {
+    send({ type: 'bot', game, ...request });
+    $('inviteDialog').close();
+  });
+  $('inviteDialog').showModal();
+});
 $('inviteCancel').addEventListener('click', () => $('inviteDialog').close());
 
 // "Chess (3+1)"

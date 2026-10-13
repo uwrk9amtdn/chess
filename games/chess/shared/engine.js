@@ -564,8 +564,13 @@ export function findMove(state, { from, to, promotion, drop } = {}) {
 // Returns the state after the move, or null if the move is not legal.
 export function applyMove(state, move) {
   const legal = findMove(state, move);
-  if (!legal) return null;
-  const next = play(state, legal);
+  return legal ? applyLegal(state, legal) : null;
+}
+
+// The same for a move that legalMoves or findMove returned, without looking
+// it up again.
+export function applyLegal(state, move) {
+  const next = play(state, move);
   next.history = [...state.history, positionKey(next)];
   return next;
 }

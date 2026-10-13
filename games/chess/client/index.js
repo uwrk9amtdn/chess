@@ -2,11 +2,12 @@
 // screen. All game state comes from the server as snapshots; this file only
 // draws them and sends the player's intent. See games/README.md.
 
-import { variants } from '../shared/variants.js';
+import { variants, BOT_LEVELS } from '../shared/variants.js';
 import {
   createGame, applyMove, inCheck, seatToMove, teamOf, kingSquares, POCKET_TYPES,
 } from '../shared/engine.js';
 import { createBoard, drawThumbnail, pieceUrl } from './board.js';
+import { createBot } from './bot/index.js';
 
 const LOW_TIME_MS = 10_000;
 const PRESETS = [[1, 0], [2, 1], [3, 0], [3, 2], [5, 0], [5, 3], [10, 0], [10, 5], [15, 10], [30, 0], [30, 20]];
@@ -95,14 +96,20 @@ const range = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from
 const MINUTES = [...range(1, 20), 25, 30, 35, 40, 45, 60];
 const INCREMENTS = [...range(0, 20), 25, 30];
 
-// The variant and time last sent from the game setup are offered again.
+// The side a player may ask for against a bot, and the seat that is.
+const SIDES = { white: 0, random: null, black: 1 };
+
+// The variant and time last sent from the game setup are offered again, and
+// so are the bot's level and the side played against it.
 function rememberedSetup() {
-  const setup = { variant: 'standard', minutes: 5, increment: 3 };
+  const setup = { variant: 'standard', minutes: 5, increment: 3, level: 3, side: 'random' };
   try {
     const saved = JSON.parse(localStorage.getItem(SETUP_KEY)) || {};
     if (Object.hasOwn(variants, saved.variant)) setup.variant = saved.variant;
     if (MINUTES.includes(saved.minutes)) setup.minutes = saved.minutes;
     if (INCREMENTS.includes(saved.increment)) setup.increment = saved.increment;
+    if (Number.isInteger(saved.level) && saved.level >= 1 && saved.level <= BOT_LEVELS) setup.level = saved.level;
+    if (Object.hasOwn(SIDES, saved.side)) setup.side = saved.side;
   } catch {
     // Nothing usable was saved.
   }
@@ -116,16 +123,40 @@ function variantIcon(variant) {
   });
 }
 
+function saveSetup(setup) {
+  try {
+    localStorage.setItem(SETUP_KEY, JSON.stringify(setup));
+  } catch {
+    // Storage can be unavailable; the setup is then not remembered.
+  }
+}
+
 // First a grid of time controls: clicking one sends an invitation to a game
 // of standard chess. "Custom" leads to the game setup, where the variant and
 // any time control can be chosen.
 function inviteForm(container, submit) {
+  setupForm(container, submit, false);
+}
+
+// The same for a game against a bot, with its level and the side to play
+// above both. Submits { options, bot, seat }, which is what the lobby's "bot"
+// message takes.
+function botForm(container, submit) {
+  setupForm(container, submit, true);
+}
+
+function setupForm(container, submit, bot) {
   const setup = rememberedSetup();
+  const done = (options) => {
+    if (!bot) return submit(options);
+    saveSetup(setup);
+    submit({ options, bot: { level: setup.level }, seat: SIDES[setup.side] });
+  };
 
   const tiles = PRESETS.map(([m, i]) => el('button', {
     type: 'button',
     className: 'chessTimeTile',
-    onclick: () => submit({ variant: 'standard', minutes: m, increment: i }),
+    onclick: () => done({ variant: 'standard', minutes: m, increment: i }),
   }, el('strong', { textContent: formatTimeControl(m, i) }), el('span', { textContent: timeCategory(m, i) })));
   const grid = el('div', { className: 'chessTimes' }, ...tiles,
     el('button', { type: 'button', className: 'chessTimeTile', onclick: () => show(true) },
@@ -194,16 +225,35 @@ function inviteForm(container, submit) {
       el('button', {
         type: 'button',
         className: 'primary',
-        textContent: 'Send invitation',
+        textContent: bot ? 'Play' : 'Send invitation',
         onclick: () => {
-          try {
-            localStorage.setItem(SETUP_KEY, JSON.stringify(setup));
-          } catch {
-            // Storage can be unavailable; the setup is then not remembered.
-          }
-          submit({ ...setup });
+          saveSetup(setup);
+          done({ variant: setup.variant, minutes: setup.minutes, increment: setup.increment });
         },
       })));
+
+  // The opponent, for a game against a bot: how strong, and which side we take.
+  const level = el('input', { type: 'range', min: 1, max: BOT_LEVELS, step: 1, value: setup.level });
+  const levelBadge = el('strong', { textContent: setup.level });
+  level.oninput = () => {
+    setup.level = Number(level.value);
+    levelBadge.textContent = setup.level;
+  };
+  const sides = Object.keys(SIDES).map((side) => el('button', {
+    type: 'button',
+    textContent: capitalise(side),
+    onclick: () => {
+      setup.side = side;
+      renderSide();
+    },
+  }));
+  function renderSide() {
+    sides.forEach((button, i) => button.classList.toggle('selected', Object.keys(SIDES)[i] === setup.side));
+  }
+  renderSide();
+  const opponent = el('div', { className: 'chessOpponent', hidden: !bot },
+    el('label', {}, el('span', {}, 'Level ', levelBadge), level),
+    el('div', { className: 'chessSides' }, ...sides));
 
   function show(custom) {
     grid.hidden = custom;
@@ -212,7 +262,7 @@ function inviteForm(container, submit) {
   }
   renderVariant();
   renderTime();
-  container.append(grid, form);
+  container.append(opponent, grid, form);
 }
 
 // How each ending reads, given the colour that lost: "Black resigned".
@@ -320,6 +370,8 @@ function mount(container, ctx) {
   let shown = { id: null, ply: 0 }; // what the board showed last
   let chatMessages = [];
   let inHand = null; // the pocket piece picked up to be dropped
+  // Plays the other seat when this is a game against a bot.
+  const bot = createBot(ctx);
 
   const board = createBoard(boardEl, {
     onMove: (move) => ctx.send({ action: 'move', ...move }),
@@ -452,7 +504,8 @@ function mount(container, ctx) {
       el('span', { className: `swatch seat${seat}` }), name)));
     watchersEl.hidden = !game.spectators || !live;
     watchersEl.textContent = `${game.spectators} watching`;
-    chatCard.hidden = watching();
+    // A bot has nothing to say.
+    chatCard.hidden = watching() || Boolean(game.bots?.some(Boolean));
     const result = game.over && resultOf(variant, game.over);
     resultEl.hidden = !result;
     resultEl.textContent = result ? result.text : '';
@@ -620,6 +673,7 @@ function mount(container, ctx) {
       }
       game = snapshot;
       render();
+      bot.update(snapshot);
     },
     chat(messages) {
       // One more message than before is a new one; anything else is the log.
@@ -629,6 +683,7 @@ function mount(container, ctx) {
       renderChat();
     },
     destroy() {
+      bot.destroy();
       clearInterval(ticker);
       document.removeEventListener('keydown', onKey);
       container.replaceChildren();
@@ -641,4 +696,4 @@ function preview(container, { variant, ...position }) {
   drawThumbnail(container, { variant: variants[variant], ...position });
 }
 
-export default { inviteForm, describeOptions, describeResult, preview, mount };
+export default { inviteForm, botForm, describeOptions, describeResult, preview, mount };

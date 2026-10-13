@@ -9,15 +9,18 @@ import { variants } from '../shared/variants.js';
 
 export class ChessMatch {
   // `players` holds one name per seat and `options` is what validateOptions
-  // returned. `onChange(match)` fires after anything the players should see,
-  // including the end of the game.
-  constructor({ players, options, onChange }) {
+  // returned. `bots` says, per seat, which level of bot plays it (or null);
+  // its moves arrive like anyone's, from the browser of the player it faces.
+  // `onChange(match)` fires after anything the players should see, including
+  // the end of the game.
+  constructor({ players, options, bots, onChange }) {
     const variant = variants[options.variant];
     const initialMs = Math.round(options.minutes * 60_000);
     this.id = randomUUID();
     this.variant = variant;
     this.players = players;
     this.options = options;
+    this.bots = bots ?? players.map(() => null);
     this.initialMs = initialMs;
     this.incrementMs = options.increment * 1000;
     this.onChange = onChange;
@@ -169,6 +172,7 @@ export class ChessMatch {
       variant: this.variant.id,
       start: this.start,
       players: this.players,
+      bots: this.bots,
       you: seat,
       options: this.options,
       state: serialize(this.state),

@@ -87,6 +87,60 @@ test('lobby, invitation and a match', async (t) => {
   assert.deepEqual(after, { alice: 'idle', bob: 'idle', carol: 'idle' });
 });
 
+test('a match against a bot, whose seat the player\'s browser plays', async (t) => {
+  const server = await startServer({ port: 0, gamesDir });
+  t.after(() => server.close());
+  const alice = connect(server.port);
+  const bob = connect(server.port);
+  await Promise.all([alice.opened, bob.opened]);
+  alice.send({ type: 'join', name: 'alice' });
+  bob.send({ type: 'join', name: 'bob' });
+  await Promise.all([alice.next('joined'), bob.next('joined')]);
+
+  // The game decides what a bot may be.
+  alice.send({ type: 'bot', game: 'nope' });
+  assert.match((await alice.next('error')).message, /Unknown game/);
+  alice.send({ type: 'bot', game: 'pick', options: { prize: 9 }, bot: { mood: 'calm' } });
+  assert.match((await alice.next('error')).message, /prize/);
+  alice.send({ type: 'bot', game: 'pick', bot: { mood: 'sad' } });
+  assert.match((await alice.next('error')).message, /calm or wild/);
+
+  // Starting one withdraws the invitation that was waiting.
+  alice.send({ type: 'invite', to: 'bob', game: 'pick' });
+  const invite = await bob.next('invite');
+  alice.send({ type: 'bot', game: 'pick', options: { prize: 2 }, bot: { mood: 'calm', junk: 1 }, seat: 1 });
+  assert.equal((await bob.next('inviteClosed', (m) => m.id === invite.id)).reason, 'unavailable');
+  const { snapshot } = await alice.next('match');
+  assert.deepEqual([snapshot.players, snapshot.bots, snapshot.you], [['calm bot', 'alice'], [{ mood: 'calm' }, null], 1]);
+  assert.deepEqual(snapshot.options, { prize: 2 });
+
+  // The bot is not a user, but its match is there to be watched.
+  assert.deepEqual(statuses(await bob.next('users', (m) => m.users.some((u) => u.status === 'busy'))),
+    { alice: 'busy', bob: 'idle' });
+  const live = (await bob.next('matches', (m) => m.matches.length === 1)).matches[0];
+  assert.deepEqual(live.players, ['calm bot', 'alice']);
+  alice.send({ type: 'bot', game: 'pick', bot: { mood: 'wild' } });
+  assert.match((await alice.next('error')).message, /already in a game/);
+
+  // Only the player facing the bot can act for it.
+  bob.send({ type: 'action', action: 'claim', bot: true });
+  alice.send({ type: 'action', action: 'claim', bot: true });
+  const ended = (await alice.next('match', (m) => m.snapshot.over)).snapshot;
+  assert.equal(ended.over.winner, 0);
+  assert.deepEqual(statuses(await bob.next('users', (m) => m.users.every((u) => u.status === 'idle'))),
+    { alice: 'idle', bob: 'idle' });
+
+  // The seat is random unless asked for, and marking an action does nothing
+  // in a match between people.
+  alice.send({ type: 'bot', game: 'pick', bot: { mood: 'wild' }, seat: 0 });
+  const again = (await alice.next('match', (m) => !m.snapshot.over)).snapshot;
+  assert.deepEqual([again.players, again.you], [['alice', 'wild bot'], 0]);
+  alice.send({ type: 'action', action: 'claim' });
+  assert.equal((await alice.next('match', (m) => m.snapshot.over)).snapshot.over.winner, 0);
+  alice.send({ type: 'history', game: 'pick' });
+  assert.deepEqual((await alice.next('history')).games.map((g) => g.players), [['alice', 'wild bot'], ['calm bot', 'alice']]);
+});
+
 test('reconnecting mid-match keeps the seat; staying away forfeits', async (t) => {
   const server = await startServer({ port: 0, gamesDir, graceMs: 200 });
   t.after(() => server.close());

@@ -186,3 +186,8 @@ export const double = {
 export const variants = {
   standard, chess960, kingOfTheHill, threeCheck, antichess, atomic, horde, racingKings, crazyhouse, double,
 };
+
+// Bots come in levels 1 (weakest) to BOT_LEVELS. Stockfish plays the variants
+// it knows the rules of; the search in search.js plays the others.
+export const BOT_LEVELS = 8;
+export const STOCKFISH_VARIANTS = ['standard', 'chess960'];

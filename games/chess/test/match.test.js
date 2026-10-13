@@ -24,6 +24,22 @@ test('invitation options', () => {
   assert.ok(chess.validateOptions({ minutes: 0.5, increment: 0 }, { minMinutes: 0.1 }).options);
 });
 
+test('bots', () => {
+  const options = { variant: 'standard', minutes: 3, increment: 1 };
+  assert.deepEqual(chess.validateBot({ level: 5, junk: 1 }, options), { bot: { level: 5 }, name: 'Stockfish level 5' });
+  assert.equal(chess.validateBot({ level: 1 }, { ...options, variant: 'atomic' }).name, 'Computer level 1');
+  for (const bad of [{}, { level: 0 }, { level: 9 }, { level: 2.5 }, { level: '3' }]) {
+    assert.ok(chess.validateBot(bad, options).error, JSON.stringify(bad));
+  }
+  // The match says which seat is a bot's; its moves come in like any others.
+  const bots = [null, { level: 5 }];
+  const match = chess.createMatch({ players: ['white', 'Stockfish level 5'], options, bots, onChange() {} });
+  assert.deepEqual(match.snapshot(0).bots, bots);
+  assert.equal(match.handle(0, { action: 'move', from: 12, to: 28 }), null);
+  assert.equal(match.handle(1, { action: 'move', from: 52, to: 36, bot: true }), null);
+  assert.deepEqual(newMatch().match.snapshot(null).bots, [null, null]);
+});
+
 function newMatch(options) {
   const changes = [];
   const match = chess.createMatch({
