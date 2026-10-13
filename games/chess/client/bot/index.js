@@ -53,6 +53,7 @@ export function createBot(ctx) {
   let sent = null; // the position a move was last sent for
   let retried = null; // the position Stockfish's move was refused in
   let answered = null; // the position a draw offer was answered in
+  let granted = null; // the position a takeback was granted in
   let score = 0; // what the bot last thought of its position
   let stockfishFailed = false;
   let destroyed = false;
@@ -62,7 +63,8 @@ export function createBot(ctx) {
     return engines[name];
   }
 
-  const keyOf = (g) => `${g.id}:${g.played.length}`;
+  // A takeback brings back a number of moves that was seen before.
+  const keyOf = (g) => `${g.id}:${g.takebacks}:${g.played.length}`;
   const send = (action) => ctx.send({ ...action, bot: true });
 
   async function play(seat, useStockfish) {
@@ -93,6 +95,8 @@ export function createBot(ctx) {
     await delay(Math.min(MIN_DELAY_MS, left / 40) - (performance.now() - startedAt));
     // The game may have ended or gone elsewhere while the bot was thinking.
     if (destroyed || !found.move || !game || game.over || keyOf(game) !== key) return;
+    // Nor is a move sent that is about to be taken back.
+    if (game.takebackOffer !== null) return;
     score = found.score;
     sent = key;
     send({ action: 'move', ...found.move });
@@ -113,6 +117,15 @@ export function createBot(ctx) {
       if (game.drawOffer !== null && game.drawOffer !== seat && answered !== key) {
         answered = key;
         send({ action: game.played.length >= DRAW_AFTER_PLIES && score <= 0 ? 'acceptDraw' : 'declineDraw' });
+      }
+      // The player may always have their move back.
+      if (game.takebackOffer !== null && game.takebackOffer !== seat) {
+        if (granted !== key) {
+          granted = key;
+          engines.stockfish?.stop();
+          send({ action: 'acceptTakeback' });
+        }
+        return;
       }
       if (variants[game.variant].turnOrder[game.state.turn] !== seat) return;
       let useStockfish = STOCKFISH_VARIANTS.includes(game.variant) && !stockfishFailed;

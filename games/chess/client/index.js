@@ -10,6 +10,10 @@ import { createBoard, drawThumbnail, pieceUrl } from './board.js';
 import { createBot } from './bot/index.js';
 
 const LOW_TIME_MS = 10_000;
+// A step button that is held down starts repeating after the first of these,
+// once every second one.
+const HOLD_DELAY_MS = 400;
+const HOLD_REPEAT_MS = 90;
 const PRESETS = [[1, 0], [2, 1], [3, 0], [3, 2], [5, 0], [5, 3], [10, 0], [10, 5], [15, 10], [30, 0], [30, 20]];
 const SETUP_KEY = 'chess.setup';
 const CHAT_PHRASES = { GG: 'Good game', WP: 'Well played', TY: 'Thank you', GTG: "I've got to go", BYE: 'Bye!' };
@@ -303,17 +307,19 @@ function describeResult({ options, over }) {
 }
 
 function mount(container, ctx) {
-  // What is shown for one player beside the board: top is the opponent.
-  const side = () => ({
-    material: el('div', { className: 'chessMaterial' }),
-    clock: el('div', { className: 'chessClock' }),
-    bar: el('div', { className: 'chessBar' }, el('span')),
-    player: el('div', { className: 'chessPlayer' },
+  // What is shown for one player beside the board: top is the opponent. On a
+  // narrow screen the stylesheet puts each player's on a line above or below
+  // the board, which is what `where` is for.
+  const side = (where) => ({
+    material: el('div', { className: `chessMaterial ${where}` }),
+    clock: el('div', { className: `chessClock ${where}` }),
+    bar: el('div', { className: `chessBar ${where}` }, el('span')),
+    player: el('div', { className: `chessPlayer ${where}` },
       el('span', { className: 'dot' }), el('span', { className: 'name' }), el('span', { className: 'checks' })),
     pocket: el('div', { className: 'chessPocket', hidden: true }),
   });
-  const top = side();
-  const bottom = side();
+  const top = side('top');
+  const bottom = side('bottom');
   const boardEl = el('div', { className: 'chessBoard' });
   const nav = Object.fromEntries(Object.entries(NAV_ICONS).map(([name, path]) => {
     const button = el('button', { type: 'button', title: `${capitalise(name)} move` }, icon(path));
@@ -342,12 +348,18 @@ function mount(container, ctx) {
       onclick: () => ctx.sendChat(phrase),
     })));
   const chatBody = el('div', { className: 'chessChatBody' }, chatList, chatForm, chatQuick);
+  // On a narrow screen the chat is put away: a button in the platform's bar
+  // opens it over the whole page, and shows when something new was said.
+  const chatOpen = el('button', { type: 'button', className: 'chessChatOpen', textContent: 'Chat', hidden: true });
+  const chatClose = el('button', { type: 'button', className: 'chessChatClose', textContent: 'Close' });
   const chatCard = el('div', { className: 'chessCard chessChat' },
-    el('label', { className: 'chessChatHead' }, 'Chat room', chatToggle), chatBody);
+    el('div', { className: 'chessChatHead' }, el('label', {}, 'Chat room', chatToggle), chatClose), chatBody);
+  ctx.toolbar?.append(chatOpen);
 
   const promotionChoices = el('div');
   const promotionDialog = el('dialog', { className: 'chessPromotion' }, promotionChoices);
-  container.replaceChildren(el('div', { className: 'chess' },
+  const root = el('div', { className: 'chess' });
+  root.append(
     el('div', { className: 'chessSide' },
       el('div', { className: 'chessCard chessInfo' }, timeEl, namesEl, watchersEl, resultEl),
       chatCard),
@@ -360,13 +372,14 @@ function mount(container, ctx) {
         movesEl, statusEl, actionsEl,
         bottom.player, bottom.bar),
       bottom.clock, bottom.material),
-    promotionDialog));
+    promotionDialog);
+  container.replaceChildren(root);
 
   let game = null; // latest snapshot from the server
   let gameAt = 0; // performance.now() when it arrived, for ticking the clock
   let lowTimeWarned = null; // id of the game we already beeped for
   let viewPly = null; // the earlier position being looked at, or null for the latest
-  let replay = { id: null, states: [] }; // the position after each move of one game
+  let replay = { key: null, states: [] }; // the position after each move of one game
   let shown = { id: null, ply: 0 }; // what the board showed last
   let chatMessages = [];
   let inHand = null; // the pocket piece picked up to be dropped
@@ -414,8 +427,10 @@ function mount(container, ctx) {
     const same = Boolean(prev && prev.id === next.id);
     if (same && next.moves.length > prev.moves.length) playMove(next, next.moves.length);
     if (same && next.over && !prev.over) ctx.play('end', 0.3);
-    const offered = (g) => g.you !== null && g.drawOffer !== null && g.drawOffer !== g.you;
-    if (offered(next) && !(same && offered(prev))) ctx.play('notify');
+    for (const offer of ['drawOffer', 'takebackOffer']) {
+      const offered = (g) => g.you !== null && g[offer] !== null && g[offer] !== g.you;
+      if (offered(next) && !(same && offered(prev))) ctx.play('notify');
+    }
   }
 
   // Our own seat is at the bottom; a spectator (`you` is null) sits behind the
@@ -427,7 +442,9 @@ function mount(container, ctx) {
   // The server sends the moves; replaying them gives every position of the
   // game, which is what lets the player step back through it.
   function positions(variant) {
-    if (replay.id !== game.id) replay = { id: game.id, states: [createGame(variant, game.start ?? undefined)] };
+    // After a takeback the moves are no longer the ones replayed so far.
+    const key = `${game.id}:${game.takebacks}`;
+    if (replay.key !== key) replay = { key, states: [createGame(variant, game.start ?? undefined)] };
     const { states } = replay;
     for (let i = states.length - 1; i < game.played.length; i++) states.push(applyMove(states[i], game.played[i]));
     return states;
@@ -443,9 +460,33 @@ function mount(container, ctx) {
     render();
   }
   nav.first.onclick = () => go(0);
-  nav.prev.onclick = () => go((viewPly ?? game.played.length) - 1);
-  nav.next.onclick = () => go((viewPly ?? game.played.length) + 1);
   nav.last.onclick = () => go(game.played.length);
+
+  // One step back or forward, and more of them for as long as the button is
+  // held down.
+  let holdTimer = null;
+  const release = () => clearTimeout(holdTimer);
+  for (const [button, by] of [[nav.prev, -1], [nav.next, 1]]) {
+    const step = () => go((viewPly ?? game.played.length) + by);
+    button.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      release();
+      step();
+      const again = () => {
+        if (button.disabled) return;
+        step();
+        holdTimer = setTimeout(again, HOLD_REPEAT_MS);
+      };
+      holdTimer = setTimeout(again, HOLD_DELAY_MS);
+    });
+    for (const type of ['pointerup', 'pointerleave', 'pointercancel']) button.addEventListener(type, release);
+    // A long press must not bring up the browser's menu instead.
+    button.addEventListener('contextmenu', (e) => e.preventDefault());
+    // The pointer has stepped already; this is for the keyboard.
+    button.addEventListener('click', (e) => {
+      if (e.detail === 0) step();
+    });
+  }
 
   function onKey(e) {
     if (!game || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -461,6 +502,9 @@ function mount(container, ctx) {
 
   function statusText(variant, mover) {
     if (game.drawOffer !== null && game.drawOffer !== game.you) return `${game.players[game.drawOffer]} offers a draw`;
+    if (game.takebackOffer !== null && game.takebackOffer !== game.you) {
+      return `${game.players[game.takebackOffer]} proposes a takeback`;
+    }
     if (watching()) return `${capitalise(variant.seats[mover].id)} to move`;
     return mover === game.you ? 'Your move' : `Waiting for ${game.players[mover]}`;
   }
@@ -510,7 +554,7 @@ function mount(container, ctx) {
     watchersEl.hidden = !game.spectators || !live;
     watchersEl.textContent = `${game.spectators} watching`;
     // A bot has nothing to say.
-    chatCard.hidden = watching() || Boolean(game.bots?.some(Boolean));
+    chatCard.hidden = chatOpen.hidden = watching() || Boolean(game.bots?.some(Boolean));
     const result = game.over && resultOf(variant, game.over);
     resultEl.hidden = !result;
     resultEl.textContent = result ? result.text : '';
@@ -533,12 +577,15 @@ function mount(container, ctx) {
       }));
     });
     movesEl.replaceChildren(...cells);
-    // Scroll only as far as needed to keep the move being shown in sight.
+    // Scroll only as far as needed to keep the move being shown in sight:
+    // down the list, or along it where a narrow screen has it in one row.
     const active = movesEl.querySelector('.active');
-    if (!active) movesEl.scrollTop = 0;
+    if (!active) movesEl.scrollTop = movesEl.scrollLeft = 0;
     else {
       const bottom = active.offsetTop + active.offsetHeight;
       movesEl.scrollTop = Math.max(bottom - movesEl.clientHeight, Math.min(movesEl.scrollTop, active.offsetTop));
+      const right = active.offsetLeft + active.offsetWidth;
+      movesEl.scrollLeft = Math.max(right - movesEl.clientWidth, Math.min(movesEl.scrollLeft, active.offsetLeft));
     }
     nav.first.disabled = nav.prev.disabled = ply === 0;
     nav.next.disabled = nav.last.disabled = ply === total;
@@ -636,6 +683,11 @@ function mount(container, ctx) {
       onclick: () => ctx.send({ action }),
       ...props,
     });
+    // A move can be asked back once we have made one.
+    const moved = replay.states.slice(0, game.played.length).some((state) => seatToMove(state) === game.you);
+    if (game.takebackOffer === null) actionsEl.append(button('Takeback', 'offerTakeback', { disabled: !moved }));
+    else if (game.takebackOffer === game.you) actionsEl.append(el('button', { textContent: 'Takeback proposed', disabled: true }));
+    else actionsEl.append(button('Accept takeback', 'acceptTakeback', { className: 'primary' }), button('Decline', 'declineTakeback'));
     if (game.drawOffer === null) actionsEl.append(button('Offer draw', 'offerDraw'));
     else if (game.drawOffer === game.you) actionsEl.append(el('button', { textContent: 'Draw offered', disabled: true }));
     else actionsEl.append(button('Accept draw', 'acceptDraw', { className: 'primary' }), button('Decline', 'declineDraw'));
@@ -653,6 +705,13 @@ function mount(container, ctx) {
     chatList.replaceChildren(...chatMessages.map((m) => el('li', {}, el('strong', { textContent: m.from }), ` ${m.text}`)));
     chatList.scrollTop = chatList.scrollHeight;
   }
+  function showChatSheet(open) {
+    root.classList.toggle('chatOpen', open);
+    if (open) chatOpen.classList.remove('unread');
+    renderChat();
+  }
+  chatOpen.onclick = () => showChatSheet(true);
+  chatClose.onclick = () => showChatSheet(false);
   chatToggle.addEventListener('change', () => {
     setChatEnabled(chatToggle.checked);
     renderChat();
@@ -674,7 +733,7 @@ function mount(container, ctx) {
         const sameGame = Boolean(game && game.id === snapshot.id);
         // A new move brings the board back to the present.
         if (!sameGame || snapshot.played.length !== game.played.length) viewPly = null;
-        if (!sameGame || snapshot.over) board.cancelPremove();
+        if (!sameGame || snapshot.over || snapshot.takebacks !== game.takebacks) board.cancelPremove();
       }
       game = snapshot;
       render();
@@ -684,12 +743,17 @@ function mount(container, ctx) {
       // One more message than before is a new one; anything else is the log.
       const added = messages.length === chatMessages.length + 1 ? messages[messages.length - 1] : null;
       chatMessages = messages.slice();
-      if (added && chatToggle.checked && game && added.from !== game.players[game.you]) ctx.play('notify');
+      if (added && chatToggle.checked && game && added.from !== game.players[game.you]) {
+        ctx.play('notify');
+        chatOpen.classList.toggle('unread', !root.classList.contains('chatOpen'));
+      }
       renderChat();
     },
     destroy() {
       bot.destroy();
       clearInterval(ticker);
+      release();
+      chatOpen.remove();
       document.removeEventListener('keydown', onKey);
       container.replaceChildren();
     },

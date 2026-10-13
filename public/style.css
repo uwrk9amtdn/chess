@@ -59,6 +59,9 @@ input, select {
 
 /* ---- sidebar ---- */
 
+#topbar, #closePlayers { display: none; }
+#toolbar { display: flex; gap: 8px; margin-left: auto; }
+
 #sidebar {
   display: flex;
   flex-direction: column;
@@ -172,13 +175,27 @@ dialog {
 /* Wide enough for a game that offers a lot to choose from. */
 #inviteDialog { width: min(640px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; }
 dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
-dialog[open], dialog form, #inviteForm { display: grid; gap: 12px; }
+dialog[open], dialog form, #inviteForm { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 dialog h2 { font-size: 18px; color: var(--text); text-transform: none; letter-spacing: 0; }
 .hint { color: var(--muted); font-size: 13px; }
 .formError { color: var(--danger); min-height: 1.4em; }
 
+/* A narrow screen keeps a slim bar at the top; the sidebar opens over the
+   whole page from the button in it. */
 @media (max-width: 860px) {
-  body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  #sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
-  #users { max-height: 30dvh; }
+  body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
+  #topbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  #topbar h1 { font-size: 18px; }
+  #topbar button { padding: 4px 10px; }
+  #sidebar { display: none; border-right: 0; }
+  body.playersOpen #sidebar { display: flex; position: fixed; inset: 0; z-index: 15; }
+  #closePlayers { display: block; align-self: flex-end; }
+  main { padding: 10px; }
 }

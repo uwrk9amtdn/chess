@@ -8,7 +8,16 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <!-- Shown on narrow screens only, where the sidebar is put away. -->
+  <header id="topbar">
+    <h1><a href="#/">Game Room</a></h1>
+    <!-- The game on screen may put buttons of its own here. -->
+    <div id="toolbar"></div>
+    <button id="openPlayers">Players <span id="userCountTop"></span></button>
+  </header>
+
   <aside id="sidebar">
+    <button id="closePlayers">Close</button>
     <h1><a href="#/">Game Room</a></h1>
     <p id="me"></p>
     <h2>Players <span id="userCount"></span></h2>

@@ -98,6 +98,59 @@ test('draw offers and resignation', () => {
   assert.match(match.handle(0, { action: 'move', from: 12, to: 28 }), /over/);
 });
 
+test('takebacks', () => {
+  const { match, changes } = newMatch();
+  const start = match.snapshot(0).state;
+  // There is nothing to take back yet.
+  match.handle(0, { action: 'offerTakeback' });
+  assert.equal(match.takebackOffer, null);
+  match.handle(0, { action: 'move', from: 12, to: 28 });
+  const afterE4 = changes.at(-1);
+  match.handle(1, { action: 'move', from: 52, to: 36 });
+  match.handle(0, { action: 'move', from: 6, to: 21 });
+  match.handle(0, { action: 'offerTakeback' });
+  assert.equal(changes.at(-1).takebackOffer, 0);
+  // Only the other side can answer, and it may say no.
+  match.handle(0, { action: 'acceptTakeback' });
+  assert.equal(match.played.length, 3);
+  match.handle(1, { action: 'declineTakeback' });
+  assert.deepEqual([changes.at(-1).takebackOffer, changes.at(-1).moves.length], [null, 3]);
+  // A reply leaves the request standing, and is undone with the move.
+  match.handle(0, { action: 'offerTakeback' });
+  match.handle(1, { action: 'move', from: 57, to: 42 });
+  assert.equal(match.takebackOffer, 0);
+  match.handle(1, { action: 'acceptTakeback' });
+  let snap = changes.at(-1);
+  assert.deepEqual(snap.moves, ['e4', 'e5']);
+  assert.deepEqual([snap.played.length, snap.clockHistory.length, snap.takebacks, snap.takebackOffer], [2, 2, 1, null]);
+  assert.deepEqual(snap.lastMove, { from: 52, to: 36 });
+  // The clocks are as they were, and white is to move again.
+  assert.equal(snap.running, 0);
+  assert.equal(snap.clocks[1], snap.clockHistory[1][1]);
+  assert.equal(match.handle(0, { action: 'move', from: 1, to: 18 }), null);
+  // Playing on withdraws one's own request.
+  match.handle(1, { action: 'offerTakeback' });
+  match.handle(1, { action: 'move', from: 57, to: 42 });
+  assert.equal(match.takebackOffer, null);
+  // Black's move back while white is to move again: one move is undone.
+  match.handle(0, { action: 'move', from: 5, to: 26 });
+  match.handle(0, { action: 'offerTakeback' });
+  match.handle(1, { action: 'acceptTakeback' });
+  assert.deepEqual(changes.at(-1).moves, ['e4', 'e5', 'Nc3', 'Nc6']);
+  // All the way back to the first move.
+  for (let i = 0; i < 2; i++) {
+    match.handle(0, { action: 'offerTakeback' });
+    match.handle(1, { action: 'acceptTakeback' });
+  }
+  snap = changes.at(-1);
+  assert.deepEqual([snap.moves, snap.lastMove, snap.clocks], [[], null, [180_000, 180_000]]);
+  assert.deepEqual(snap.state, start);
+  assert.ok(afterE4.clocks[0] > 180_000);
+  match.handle(0, { action: 'resign' });
+  match.handle(1, { action: 'offerTakeback' });
+  assert.equal(match.takebackOffer, null);
+});
+
 test('variants: a random start position and drops from the pocket', () => {
   const { match, changes } = newMatch({ variant: 'chess960' });
   const snap = match.snapshot(0);

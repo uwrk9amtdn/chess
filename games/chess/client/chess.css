@@ -37,7 +37,21 @@
 .chessResult { border-top: 1px solid var(--border); padding-top: 8px; text-align: center; }
 
 .chessChat { display: flex; flex-direction: column; min-height: 0; }
-.chessChatHead { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; color: var(--muted); }
+.chessChatHead { display: flex; align-items: center; gap: 12px; padding: 10px 12px; color: var(--muted); }
+.chessChatHead label { flex: 1; display: flex; justify-content: space-between; align-items: center; }
+/* Only a narrow screen puts the chat away, behind a button in the top bar. */
+.chessChatClose { display: none; }
+.chessChatOpen { position: relative; }
+.chessChatOpen.unread::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #d85000;
+}
 .chessChatHead input { accent-color: var(--accent); width: 18px; height: 18px; margin: 0; }
 .chessChatBody { display: flex; flex-direction: column; border-top: 1px solid var(--border); }
 .chessChatLog { list-style: none; margin: 0; padding: 8px 12px; height: 240px; overflow-y: auto; overflow-wrap: anywhere; }
@@ -190,7 +204,19 @@
 .chessPlayer .dot.online { border-color: var(--accent); background: var(--accent); }
 
 .chessNav { display: flex; background: var(--surface-2); border-block: 1px solid var(--border); }
-.chessNav button { flex: 1; display: grid; place-items: center; padding: 6px 0; border: 0; border-radius: 0; background: none; }
+.chessNav button {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  /* They can be held down, which must not select or call up a menu. */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
 .chessNav svg { width: 20px; height: 20px; fill: var(--muted); }
 .chessNav button:hover:not(:disabled) svg { fill: var(--accent); }
 
@@ -212,7 +238,7 @@
 .chessStatus strong { font-size: 18px; }
 .chessActions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 14px 10px; }
 .chessActions:empty { display: none; }
-.chessActions button { flex: 1; white-space: nowrap; }
+.chessActions button { flex: 1; padding-inline: 8px; white-space: nowrap; }
 
 /* ---- dialogs ---- */
 
@@ -235,7 +261,7 @@
 .chessTimeTile:hover:not(:disabled) { background: #ebd0c2; color: var(--text); filter: none; }
 
 /* The game setup behind "Custom". */
-.chessSetup { display: grid; gap: 16px; }
+.chessSetup { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
 .chessVariantPick {
   display: flex;
   align-items: center;
@@ -247,7 +273,7 @@
   text-align: left;
 }
 .chessVariantPick strong { font-size: 18px; font-weight: 400; white-space: nowrap; }
-.chessVariantPick .about { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chessVariantPick .about { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; }
 .chessVariantPick .caret { color: #1b78d0; }
 /* The list opens in place and pushes the rest down, so the dialog grows
    with it instead of cutting it off. */
@@ -295,7 +321,9 @@
 .chessSetupActions .primary { flex: 1; padding: 10px; }
 
 @media (max-width: 560px) {
-  .chessVariantPick .about { display: none; }
+  /* The description gets a line of its own under the name. */
+  .chessVariantPick { flex-wrap: wrap; }
+  .chessVariantPick .about { flex: none; width: 100%; order: 1; }
   .chessVariantPick strong { flex: 1; }
   .chessSliders { grid-template-columns: 1fr; }
   .chessSliders label:last-child { text-align: left; }
@@ -312,8 +340,77 @@ dialog.chessPromotion { width: auto; padding: 12px; }
   .chessSide > * { flex: 1; min-width: 0; }
 }
 @media (max-width: 860px) {
-  .chess { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
-  .chessTable { flex: none; max-width: none; }
-  .chessControls { width: auto; align-self: stretch; }
-  .chessSide { flex-direction: column; align-items: stretch; }
+  /* One column: the opponent's name and clock on a line above the board,
+     our own below it, then the moves in a single row, and the rest. The
+     panel's parts are laid out one by one, so the card itself is gone. */
+  .chess {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "topPlayer topMaterial topClock"
+      "topBar topBar topBar"
+      "table table table"
+      "bottomPlayer bottomMaterial bottomClock"
+      "bottomBar bottomBar bottomBar"
+      "moves moves moves"
+      "nav nav nav"
+      "status status status"
+      "actions actions actions"
+      "side side side";
+    gap: 0 8px;
+    align-items: center;
+  }
+  .chessControls, .chessPanel { display: contents; }
+  .chessTable { grid-area: table; max-width: none; margin: 6px 0; }
+  .chessSide { grid-area: side; flex-direction: column; align-items: stretch; margin-top: 10px; }
+
+  .chessPlayer.top { grid-area: topPlayer; }
+  .chessMaterial.top { grid-area: topMaterial; }
+  .chess .chessClock.top { grid-area: topClock; }
+  .chessBar.top { grid-area: topBar; }
+  .chessPlayer.bottom { grid-area: bottomPlayer; }
+  .chessMaterial.bottom { grid-area: bottomMaterial; }
+  .chess .chessClock.bottom { grid-area: bottomClock; }
+  .chessBar.bottom { grid-area: bottomBar; }
+  .chessPlayer { min-width: 0; padding: 4px 2px; font-size: 15px; }
+  .chessMaterial { min-height: 0; padding: 0; }
+  .chess .chessClock { align-self: center; justify-self: end; padding: 0 8px; border-radius: 4px; font-size: 24px; line-height: 1.3; }
+  .chessBar { height: 3px; margin-top: 3px; border-radius: 2px; background: var(--border); overflow: hidden; }
+
+  .chessMoves {
+    grid-area: moves;
+    display: flex;
+    align-items: stretch;
+    height: auto;
+    min-height: 34px;
+    margin-top: 8px;
+    border-radius: var(--radius) var(--radius) 0 0;
+    background: var(--surface);
+    overflow: auto hidden;
+    scrollbar-width: none;
+    white-space: nowrap;
+  }
+  .chessMoves .index { display: flex; align-items: center; flex: none; padding-left: 10px; border: 0; background: none; font-size: 13px; }
+  .chessMoves .index::after { content: '.'; }
+  .chessMoves button { flex: none; padding: 6px 7px; font-size: 15px; }
+  .chessNav { grid-area: nav; border-radius: 0 0 var(--radius) var(--radius); }
+  .chessNav button { padding: 8px 0; }
+  .chessStatus { grid-area: status; padding: 8px 0; border: 0; }
+  .chessActions { grid-area: actions; padding: 0; }
+
+  /* The details shrink to a line or two. */
+  .chessInfo { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; padding: 8px 12px; font-size: 13px; }
+  .chessTime .chessIcon { font-size: 15px; }
+  .chessNames { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+  .chessNames div { gap: 5px; }
+  .chess .swatch { width: 10px; height: 10px; }
+  .chessWatchers { margin-left: auto; }
+  .chessResult { width: 100%; padding-top: 6px; margin-top: 4px; }
+
+  /* The chat is out of the way until its button opens it over the page. */
+  .chessChat { display: none; }
+  .chess.chatOpen .chessChat { display: flex; position: fixed; inset: 0; z-index: 15; border-radius: 0; }
+  .chess.chatOpen .chessChatBody { flex: 1; min-height: 0; }
+  .chess.chatOpen .chessChatLog { flex: 1; height: auto; }
+  .chessChatClose { display: block; }
 }

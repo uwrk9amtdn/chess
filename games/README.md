@@ -73,6 +73,7 @@ Default-export an object with:
 
 - `ctx.send({ action: 'move', ... })`: sends an action to your match's `handle`. With `bot: true` it is handled as coming from the bot's seat (see "Bots").
 - `ctx.play(name, delay?)`: plays a sound from `public/js/sounds.js` (`move`, `capture`, `check`, `explosion`, `end`, `notify`, `lowTime`). The platform already plays `start` for a new match and `notify` for invitations.
+- `ctx.toolbar`: an element in the bar at the top of a narrow screen, where the sidebar is put away. The game may put buttons of its own in it, for anything it hides on such a screen (chess puts its chat there), and must take them out again in `destroy`.
 - `ctx.sendChat(text)`: says something to the other players of the match (up to 140 characters). The platform keeps the conversation, also after the match is over, and gives it back through the view's `chat`. It plays no sound for a message; that is up to the game.
 - `ctx.toast(text)`: shows a short notice.
 

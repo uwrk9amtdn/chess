@@ -190,6 +190,7 @@ const handlers = {
   match(msg) {
     const fresh = !match || match.snapshot.id !== msg.snapshot.id;
     if (fresh && !resuming && !msg.snapshot.over && msg.snapshot.you !== null) play('start');
+    if (fresh) showPlayers(false);
     resuming = false;
     match = { game: msg.game, snapshot: msg.snapshot };
     rememberWatching(spectating() && !msg.snapshot.over ? msg.snapshot.id : null);
@@ -232,6 +233,7 @@ function showChat() {
 const ctx = {
   send: (action) => send({ ...action, type: 'action' }),
   sendChat: (text) => send({ type: 'chat', text }),
+  toolbar: $('toolbar'),
   play,
   toast,
 };
@@ -251,6 +253,7 @@ function closeMatch() {
 // ---- routing: "#/" is the grid, "#/<game id>" is that game's page ----
 
 function applyRoute() {
+  showPlayers(false);
   const id = location.hash.replace(/^#\/?/, '');
   const next = games.has(id) ? id : null;
   // A match in progress cannot be left by navigating; a finished one is put away.
@@ -409,7 +412,7 @@ $('nameDialog').addEventListener('cancel', (e) => e.preventDefault());
 
 function renderUsers() {
   const sorted = [...users].sort((a, b) => (b.name === me) - (a.name === me) || a.name.localeCompare(b.name));
-  $('userCount').textContent = users.length;
+  $('userCount').textContent = $('userCountTop').textContent = users.length;
   $('users').replaceChildren(...sorted.map((u) => {
     let status = u.game && games.has(u.game) ? `${u.status} · ${games.get(u.game).name}` : u.status;
     if (u.name === me) status = `you · ${status}`;
@@ -425,7 +428,16 @@ function renderUsers() {
   }));
 }
 
+// On a narrow screen the sidebar is put away: a button in the bar at the top
+// opens it over the whole page.
+function showPlayers(open) {
+  document.body.classList.toggle('playersOpen', open);
+}
+$('openPlayers').addEventListener('click', () => showPlayers(true));
+$('closePlayers').addEventListener('click', () => showPlayers(false));
+
 function openInvite(name) {
+  showPlayers(false);
   const game = route;
   $('inviteTitle').textContent = `Challenge ${name} to ${games.get(game).name}`;
   $('inviteForm').replaceChildren();

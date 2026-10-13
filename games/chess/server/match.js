@@ -27,6 +27,8 @@ export class ChessMatch {
     // Variants with several starting positions get one at random.
     this.start = variant.starts ? Math.floor(Math.random() * variant.starts) : null;
     this.state = createGame(variant, this.start ?? undefined);
+    // The position before each move and after the last, for taking moves back.
+    this.history = [this.state];
     // Remaining time per clock as of `turnStartedAt`. Seats sharing a clock
     // index (team mates) share the time.
     const clockCount = Math.max(...variant.seats.map((s) => s.clock)) + 1;
@@ -39,6 +41,10 @@ export class ChessMatch {
     this.clockHistory = [];
     this.lastMove = null;
     this.drawOffer = null;
+    // The seat asking to take its last move back, and how often that was
+    // granted: a client can tell by it that the moves it knew were replaced.
+    this.takebackOffer = null;
+    this.takebacks = 0;
     this.connected = players.map(() => true);
     this.spectators = 0;
     this.over = null;
@@ -73,6 +79,7 @@ export class ChessMatch {
       this.clocks[c] = Math.max(0, this.clocks[c] - (Date.now() - this.turnStartedAt));
     }
     this.drawOffer = null;
+    this.takebackOffer = null;
     this.over = { reason, winner };
     this.onChange(this);
   }
@@ -86,6 +93,9 @@ export class ChessMatch {
       case 'offerDraw': this.offerDraw(seat); return null;
       case 'acceptDraw': this.answerDraw(seat, true); return null;
       case 'declineDraw': this.answerDraw(seat, false); return null;
+      case 'offerTakeback': this.offerTakeback(seat); return null;
+      case 'acceptTakeback': this.answerTakeback(seat, true); return null;
+      case 'declineTakeback': this.answerTakeback(seat, false); return null;
       default: return 'Unknown action';
     }
   }
@@ -109,8 +119,12 @@ export class ChessMatch {
     this.played.push({ from: move.from, to: move.to, promotion: move.promotion, drop: move.drop });
     this.clockHistory.push(this.clocks.slice());
     this.state = applyMove(this.state, move);
+    this.history.push(this.state);
     this.lastMove = { from: move.from, to: move.to };
     this.drawOffer = null;
+    // Whoever plays on no longer wants their move back. The other side's
+    // reply leaves the request standing: granting it undoes the reply too.
+    if (this.takebackOffer === seat) this.takebackOffer = null;
     this.turnStartedAt = now;
 
     const result = status(this.state);
@@ -146,6 +160,42 @@ export class ChessMatch {
       this.drawOffer = null;
       this.onChange(this);
     }
+  }
+
+  // How many moves are left once `seat` has taken its last one back, or null
+  // if it has not moved yet.
+  takebackPly(seat) {
+    for (let ply = this.played.length - 1; ply >= 0; ply--) {
+      if (seatToMove(this.history[ply]) === seat) return ply;
+    }
+    return null;
+  }
+
+  offerTakeback(seat) {
+    if (this.over || this.takebackOffer !== null || this.takebackPly(seat) === null) return;
+    this.takebackOffer = seat;
+    this.onChange(this);
+  }
+
+  // Only the other team can answer. Granted, the game goes back to where the
+  // asking player was last to move, clocks included.
+  answerTakeback(seat, accept) {
+    if (this.over || this.takebackOffer === null) return;
+    if (teamOf(this.variant, this.takebackOffer) === teamOf(this.variant, seat)) return;
+    if (accept) {
+      const ply = this.takebackPly(this.takebackOffer);
+      this.moves.length = this.played.length = this.clockHistory.length = ply;
+      this.history.length = ply + 1;
+      this.state = this.history[ply];
+      this.clocks = ply ? this.clockHistory[ply - 1].slice() : this.clocks.map(() => this.initialMs);
+      this.turnStartedAt = Date.now();
+      this.lastMove = ply ? { from: this.played[ply - 1].from, to: this.played[ply - 1].to } : null;
+      this.drawOffer = null;
+      this.takebacks++;
+      this.armFlag();
+    }
+    this.takebackOffer = null;
+    this.onChange(this);
   }
 
   setConnected(seat, connected) {
@@ -186,6 +236,8 @@ export class ChessMatch {
       lastMove: this.lastMove,
       check: inCheck(this.state, teamOf(this.variant, seatToMove(this.state))),
       drawOffer: this.drawOffer,
+      takebackOffer: this.takebackOffer,
+      takebacks: this.takebacks,
       connected: this.connected,
       spectators: this.spectators,
       over: this.over,
