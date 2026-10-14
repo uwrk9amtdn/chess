@@ -6,6 +6,13 @@
   <title>Game Room</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/style.css">
+  <script>
+    // The chosen theme, before anything is drawn; app.js keeps it up to date.
+    try {
+      const theme = localStorage.getItem('games.theme');
+      if (theme) document.documentElement.dataset.theme = theme;
+    } catch {}
+  </script>
 </head>
 <body>
   <!-- Shown on narrow screens only, where the sidebar is put away. -->
@@ -22,7 +29,10 @@
     <p id="me"></p>
     <h2>Players <span id="userCount"></span></h2>
     <ul id="users"></ul>
-    <button id="soundToggle"></button>
+    <div id="settings">
+      <button id="themeOpen">Theme</button>
+      <button id="soundToggle"></button>
+    </div>
   </aside>
 
   <main>
@@ -72,6 +82,15 @@
       <p class="formError" id="nameError"></p>
       <button class="primary">Enter</button>
     </form>
+  </dialog>
+
+  <dialog id="themeDialog">
+    <h2>Theme</h2>
+    <h3>Site</h3>
+    <div id="siteThemes"></div>
+    <!-- Each game may add choices of its own, such as the look of a board. -->
+    <div id="gameThemes"></div>
+    <button id="themeDone" class="primary">Done</button>
   </dialog>
 
   <dialog id="inviteDialog">

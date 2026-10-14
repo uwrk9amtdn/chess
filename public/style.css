@@ -1,6 +1,6 @@
 /* The site shell. Games bring their own stylesheet and may use these colours. */
 
-:root {
+:root, [data-theme="light"] {
   --bg: #edebe9;
   --surface: #fff;
   --surface-2: #f7f6f5;
@@ -12,8 +12,84 @@
   --danger: #c33;
   --idle: #629924;
   --busy: #d59020;
+  --active: #d0e0bd; /* a running clock */
+  --active-text: #333;
+  --danger-soft: #f7d9d9;
+  --selected: #d1e4f6; /* the item being looked at in a list */
+  --link: #1b78d0;
+  --chip: #e2e2e2;
+  --tile-hover: #ebd0c2;
   --shadow: 0 2px 2px rgba(0, 0, 0, 0.14), 0 3px 1px -2px rgba(0, 0, 0, 0.2), 0 1px 5px rgba(0, 0, 0, 0.12);
   color-scheme: light;
+}
+
+/* The other themes from the theme menu; app.js sets data-theme on <html>,
+   and index.html does so before the first paint. The menu also sets it on
+   each theme's sample, which then shows in that theme's colours. */
+[data-theme="dark"] {
+  --bg: #161512;
+  --surface: #262421;
+  --surface-2: #302e2c;
+  --border: #404040;
+  --text: #bababa;
+  --muted: #8f8f8f;
+  --accent: #629924;
+  --accent-text: #fff;
+  --danger: #e05a4f;
+  --idle: #629924;
+  --busy: #d59020;
+  --active: #3e5226;
+  --active-text: #e6e6e6;
+  --danger-soft: #4d2522;
+  --selected: #293a49;
+  --link: #3692e7;
+  --chip: #3a3836;
+  --tile-hover: #4a3a30;
+  --shadow: 0 2px 2px rgba(0, 0, 0, 0.4), 0 3px 1px -2px rgba(0, 0, 0, 0.4), 0 1px 5px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+[data-theme="sepia"] {
+  --bg: #e6dcc8;
+  --surface: #f7f0e1;
+  --surface-2: #efe5d1;
+  --border: #d4c4a6;
+  --text: #4a3b2a;
+  --muted: #7c6a53;
+  --accent: #9c6428;
+  --accent-text: #fff;
+  --danger: #b23a2a;
+  --idle: #6f8f2c;
+  --busy: #c27c1e;
+  --active: #e2d3a4;
+  --active-text: #3b2f20;
+  --danger-soft: #f0d3c6;
+  --selected: #e8d6b0;
+  --link: #8a5519;
+  --chip: #e4d7bd;
+  --tile-hover: #e6c9a5;
+  color-scheme: light;
+}
+[data-theme="midnight"] {
+  --bg: #0e1522;
+  --surface: #172133;
+  --surface-2: #1e2a3f;
+  --border: #2c3a52;
+  --text: #c9d3e2;
+  --muted: #8593aa;
+  --accent: #3d7fe0;
+  --accent-text: #fff;
+  --danger: #ec5d5d;
+  --idle: #4caf50;
+  --busy: #e0a030;
+  --active: #1f3f6d;
+  --active-text: #e8eef8;
+  --danger-soft: #48212c;
+  --selected: #243f68;
+  --link: #6ea8ff;
+  --chip: #26344b;
+  --tile-hover: #2e4466;
+  --shadow: 0 2px 2px rgba(0, 0, 0, 0.4), 0 3px 1px -2px rgba(0, 0, 0, 0.4), 0 1px 5px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -83,7 +159,20 @@ input, select {
   background: var(--surface-2);
 }
 #users button { padding: 2px 10px; }
-#soundToggle { margin-top: auto; align-self: flex-start; }
+#settings { display: flex; gap: 8px; margin-top: auto; }
+
+/* ---- theme menu ---- */
+
+#themeDialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; }
+#themeDialog h3 { margin: 16px 0 8px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+#siteThemes { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+#siteThemes button { display: grid; gap: 6px; padding: 8px; text-align: left; }
+#siteThemes button.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+/* Each theme drawn in its own colours: the page, a card on it and the accent. */
+.themeSample { display: flex; align-items: end; gap: 4px; height: 36px; padding: 6px; border-radius: 4px; background: var(--bg); }
+.themeSample span { flex: 1; height: 100%; border-radius: 3px; background: var(--surface); }
+.themeSample span + span { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+#themeDone { display: block; margin: 16px 0 0 auto; }
 .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .dot.idle { background: var(--idle); }
 .dot.busy { background: var(--busy); }

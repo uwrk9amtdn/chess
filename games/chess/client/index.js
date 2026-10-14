@@ -6,7 +6,8 @@ import { variants, BOT_LEVELS } from '../shared/variants.js';
 import {
   createGame, applyMove, inCheck, seatToMove, teamOf, kingSquares, POCKET_TYPES,
 } from '../shared/engine.js';
-import { createBoard, drawThumbnail, pieceUrl } from './board.js';
+import { createBoard, drawThumbnail } from './board.js';
+import { pieceImage, settings } from './theme.js';
 import { createBot } from './bot/index.js';
 
 const LOW_TIME_MS = 10_000;
@@ -408,7 +409,7 @@ function mount(container, ctx) {
             promotionDialog.close();
           },
         });
-        button.style.backgroundImage = `url("${pieceUrl(type, seat)}")`;
+        button.style.backgroundImage = pieceImage(type, seat);
         return button;
       }));
       promotionDialog.addEventListener('close', () => resolve(choice), { once: true });
@@ -626,7 +627,7 @@ function mount(container, ctx) {
         slot.dataset.count = count;
         slot.classList.toggle('empty', !count);
         slot.classList.toggle('selected', mine && inHand === type);
-        slot.style.backgroundImage = `url("${pieceUrl(type, seat)}")`;
+        slot.style.backgroundImage = pieceImage(type, seat);
         slot.addEventListener('pointerdown', (e) => {
           if (e.button !== 0) return;
           e.preventDefault();
@@ -651,7 +652,7 @@ function mount(container, ctx) {
         lead += extra * value;
         for (let i = 0; i < extra; i++) {
           const piece = el('span', { className: 'piece' });
-          piece.style.backgroundImage = `url("${pieceUrl(type, 1)}")`;
+          piece.style.backgroundImage = pieceImage(type, 1);
           parts.push(piece);
         }
       }
@@ -778,4 +779,4 @@ function preview(container, { variant, ...position }) {
   drawThumbnail(container, { variant: variants[variant], ...position });
 }
 
-export default { inviteForm, botForm, describeOptions, describeResult, preview, mount };
+export default { inviteForm, botForm, describeOptions, describeResult, preview, settings, mount };

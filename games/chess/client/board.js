@@ -6,11 +6,7 @@
 // CSS animates.
 
 import { legalMoves, legalDrops, premoveTargets, applyMove, squareName } from '../shared/engine.js';
-
-// The piece images are named like wK.svg and bQ.svg; even seats play white.
-const COLOURS = ['w', 'b'];
-export const pieceUrl = (type, seat) =>
-  new URL(`./pieces/${COLOURS[seat % 2]}${type.toUpperCase()}.svg`, import.meta.url).href;
+import { pieceImage } from './theme.js';
 
 const DRAG_THRESHOLD_PX = 5;
 const FADE_MS = 200;
@@ -35,7 +31,7 @@ export function drawThumbnail(root, { variant, pieces, lastMove, checked }) {
       const sq = div(`sq ${(x + y) % 2 ? 'light' : 'dark'}`);
       if (lastMove && (lastMove.from === idx || lastMove.to === idx)) sq.classList.add('last');
       if (checked.includes(idx)) sq.classList.add('check');
-      if (pieces[idx]) sq.style.backgroundImage = `url("${pieceUrl(pieces[idx][0], Number(pieces[idx].slice(1)))}")`;
+      if (pieces[idx]) sq.style.backgroundImage = pieceImage(pieces[idx][0], Number(pieces[idx].slice(1)));
       squares.push(sq);
     }
   }
@@ -187,7 +183,7 @@ export function createBoard(root, { onMove, choosePromotion, onDropSelected = ()
         piecesEl.append(entry.el);
       }
       if (entry.type !== p.type || entry.seat !== p.seat) {
-        entry.el.style.backgroundImage = `url("${pieceUrl(p.type, p.seat)}")`;
+        entry.el.style.backgroundImage = pieceImage(p.type, p.seat);
       }
       entry.type = p.type;
       entry.seat = p.seat;
@@ -442,7 +438,7 @@ export function createBoard(root, { onMove, choosePromotion, onDropSelected = ()
       paint();
       if (!e || !targets.length) return;
       const el = div('chessGhost');
-      el.style.backgroundImage = `url("${pieceUrl(type, view.seat)}")`;
+      el.style.backgroundImage = pieceImage(type, view.seat);
       ghost = { id: e.pointerId, el, x: e.clientX, y: e.clientY, moved: false };
       window.addEventListener('pointermove', moveGhost);
       window.addEventListener('pointerup', endGhost);

@@ -9,6 +9,8 @@ import { play, isMuted, setMuted } from './sounds.js';
 const $ = (id) => document.getElementById(id);
 const SESSION_KEY = 'games.session';
 const WATCH_KEY = 'games.watching';
+const THEME_KEY = 'games.theme';
+const THEMES = { light: 'Light', dark: 'Dark', sepia: 'Sepia', midnight: 'Midnight' };
 const RECONNECT_MS = 1000;
 const TOAST_MS = 4000;
 let ws = null;
@@ -492,5 +494,55 @@ $('soundToggle').addEventListener('click', () => {
   play('move');
 });
 renderSoundToggle();
+
+// ---- theme ----
+
+// The site's colours; the page already wears the saved theme (see index.html).
+function currentTheme() {
+  const theme = document.documentElement.dataset.theme;
+  return theme in THEMES ? theme : 'light';
+}
+
+function setTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    // The choice then lasts until the page closes.
+  }
+}
+
+function renderSiteThemes() {
+  $('siteThemes').replaceChildren(...Object.entries(THEMES).map(([id, name]) => {
+    const selected = id === currentTheme();
+    // A sample of the theme in its own colours.
+    const sample = el('span', { className: 'themeSample' }, el('span'), el('span'));
+    sample.dataset.theme = id;
+    return el('button', {
+      type: 'button',
+      className: selected ? 'selected' : '',
+      ariaPressed: String(selected),
+      onclick: () => {
+        setTheme(id);
+        renderSiteThemes();
+      },
+    }, sample, name);
+  }));
+}
+
+$('themeOpen').addEventListener('click', () => {
+  renderSiteThemes();
+  // Games add their own choices, drawn afresh each time the menu opens.
+  const sections = [];
+  for (const client of clients.values()) {
+    if (!client.settings) continue;
+    const section = el('div');
+    client.settings(section);
+    sections.push(section);
+  }
+  $('gameThemes').replaceChildren(...sections);
+  $('themeDialog').showModal();
+});
+$('themeDone').addEventListener('click', () => $('themeDialog').close());
 
 connect();

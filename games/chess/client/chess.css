@@ -1,8 +1,8 @@
 /* Chess screen. Colours such as --surface come from the platform's style.css. */
 
+/* The board's colours until theme.js sets the chosen ones. */
+:root { --sq-light: #f0d9b5; --sq-dark: #b58863; }
 .chess, .chessPromotion, .chessThumb {
-  --sq-light: #f0d9b5;
-  --sq-dark: #b58863;
   --move-ms: 150ms;
   --radius: 8px;
 }
@@ -186,8 +186,8 @@
 }
 .chessClock:has(+ .chessPanel) { border-radius: var(--radius) var(--radius) 0 0; }
 .chessPanel + .chessClock { border-radius: 0 0 var(--radius) var(--radius); }
-.chessClock.active { background: #d0e0bd; color: #333; }
-.chessClock.low { background: #f7d9d9; color: var(--danger); }
+.chessClock.active { background: var(--active); color: var(--active-text); }
+.chessClock.low { background: var(--danger-soft); color: var(--danger); }
 
 .chessMaterial { display: flex; align-items: center; min-height: 28px; padding: 2px 4px; color: var(--muted); font-size: 13px; }
 .chessMaterial .piece { width: 22px; height: 22px; margin-right: -8px; background: center / contain no-repeat; opacity: 0.55; }
@@ -231,7 +231,7 @@
 .chessMoves .index { display: grid; place-items: center; background: var(--surface-2); border-right: 1px solid var(--border); color: var(--muted); }
 .chessMoves button { padding: 3px 12px; border: 0; border-radius: 0; background: none; text-align: left; font-size: 16px; }
 .chessMoves button:hover { background: var(--accent); color: var(--accent-text); filter: none; }
-.chessMoves button.active { background: #d1e4f6; color: var(--text); font-weight: 700; }
+.chessMoves button.active { background: var(--selected); color: var(--text); font-weight: 700; }
 
 .chessStatus { padding: 10px 14px; border-top: 1px solid var(--border); text-align: center; color: var(--muted); }
 .chessStatus.over { display: grid; gap: 4px; color: var(--text); }
@@ -258,7 +258,7 @@
   font-size: 18px;
 }
 .chessTimeTile strong { font-size: 32px; font-weight: 300; line-height: 1.1; letter-spacing: 0.06em; }
-.chessTimeTile:hover:not(:disabled) { background: #ebd0c2; color: var(--text); filter: none; }
+.chessTimeTile:hover:not(:disabled) { background: var(--tile-hover); color: var(--text); filter: none; }
 
 /* The game setup behind "Custom". */
 .chessSetup { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
@@ -274,7 +274,7 @@
 }
 .chessVariantPick strong { font-size: 18px; font-weight: 400; white-space: nowrap; }
 .chessVariantPick .about { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; }
-.chessVariantPick .caret { color: #1b78d0; }
+.chessVariantPick .caret { color: var(--link); }
 /* The list opens in place and pushes the rest down, so the dialog grows
    with it instead of cutting it off. */
 .chessVariants {
@@ -296,11 +296,11 @@
   border-left: 3px solid transparent;
   border-radius: 0;
   background: var(--surface);
-  color: #1b78d0;
+  color: var(--link);
   text-align: left;
 }
-.chessVariant .chessIcon { color: #1b78d0; }
-.chessVariant.selected { background: var(--surface-2); border-left-color: #1b78d0; }
+.chessVariant .chessIcon { color: var(--link); }
+.chessVariant.selected { background: var(--surface-2); border-left-color: var(--link); }
 .chessVariant:hover:not(.selected) { background: var(--surface-2); filter: none; }
 
 .chessSliders { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px 16px; align-items: start; }
@@ -308,16 +308,16 @@
 .chessSliders label:last-child { text-align: right; }
 .chessSliders input { width: 100%; padding: 0; border: 0; accent-color: var(--muted); }
 .chessBadges { display: flex; align-items: center; gap: 8px; color: var(--muted); }
-.chessBadges strong { min-width: 30px; padding: 2px 6px; border-radius: 4px; background: var(--muted); color: #fff; text-align: center; }
+.chessBadges strong { min-width: 30px; padding: 2px 6px; border-radius: 4px; background: var(--muted); color: var(--surface); text-align: center; }
 .chessChips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
-.chessChips button { padding: 2px 8px; border: 0; border-radius: 8px; background: #e2e2e2; color: var(--muted); font-size: 13px; }
+.chessChips button { padding: 2px 8px; border: 0; border-radius: 8px; background: var(--chip); color: var(--muted); font-size: 13px; }
 .chessSetupActions { display: flex; gap: 8px; }
 .chessOpponent { display: flex; align-items: end; gap: 16px; margin-bottom: 16px; }
 .chessOpponent label { flex: 1; display: grid; gap: 10px; color: var(--text); }
-.chessOpponent label strong { padding: 2px 6px; border-radius: 4px; background: var(--muted); color: #fff; }
+.chessOpponent label strong { padding: 2px 6px; border-radius: 4px; background: var(--muted); color: var(--surface); }
 .chessOpponent input { width: 100%; padding: 0; border: 0; accent-color: var(--muted); }
 .chessSides { display: flex; gap: 4px; }
-.chessSides button.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chessSides button.selected { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .chessSetupActions .primary { flex: 1; padding: 10px; }
 
 @media (max-width: 560px) {
@@ -329,6 +329,14 @@
   .chessSliders label:last-child { text-align: left; }
   .chessBadges { justify-content: center; order: -1; }
 }
+
+/* Board and pieces in the platform's theme menu. */
+.chessThemeOptions { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
+.chessThemeOptions button { display: grid; justify-items: center; gap: 4px; padding: 6px 4px; font-size: 13px; }
+.chessThemeOptions button.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.chessThemeSquares { display: grid; grid-template-columns: 1fr 1fr; width: 40px; height: 40px; border-radius: 4px; overflow: hidden; }
+.chessThemePieces { display: flex; padding: 2px; border-radius: 4px; background: linear-gradient(90deg, var(--sq-light) 50%, var(--sq-dark) 50%); }
+.chessThemePieces span { width: 30px; height: 30px; background: center / contain no-repeat; }
 
 dialog.chessPromotion { width: auto; padding: 12px; }
 .chessPromotion > div { display: flex; gap: 8px; }
