@@ -253,24 +253,38 @@ body.playersOpen { overflow: hidden; }
 
 main { padding: 16px; min-width: 0; }
 #home { display: grid; gap: 12px; }
-#gameGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+/* A grid of cards: three to a row on a phone, more where there is room. */
+#gameGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 16px; }
 .gameCard {
   display: grid;
-  gap: 6px;
+  justify-items: center;
   align-content: start;
-  padding: 16px;
+  gap: 10px;
+  padding: 20px 12px 16px;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
   color: var(--text);
+  text-align: center;
   text-decoration: none;
 }
 .gameCard:hover, .gameCard:focus-visible { border-color: var(--accent); }
-.gameIcon { font-size: 56px; line-height: 1; height: 64px; }
+.gameIcon { font-size: 56px; line-height: 1; height: 64px; display: grid; place-items: center; }
+.gameText { display: grid; gap: 4px; min-width: 0; }
 .gameCard strong { font-size: 18px; }
-.gameAbout { color: var(--muted); }
-.gameMeta { color: var(--muted); font-size: 13px; margin-top: 6px; }
+.gameMeta { color: var(--muted); font-size: 13px; }
+
+@media (max-width: 560px) {
+  #gameGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .gameCard { gap: 6px; padding: 12px 6px 10px; }
+  .gameIcon { font-size: 34px; height: 40px; }
+  .gameCard strong { font-size: 15px; overflow-wrap: anywhere; }
+  .gameMeta { font-size: 11px; }
+  /* The players and who is playing, a line each. */
+  .gameMeta span { display: block; }
+  .gameMeta .gameSep { display: none; }
+}
 
 /* ---- game page ---- */
 

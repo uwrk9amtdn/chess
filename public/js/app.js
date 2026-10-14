@@ -461,11 +461,15 @@ function renderPastMatches() {
 function renderGrid() {
   $('gameGrid').replaceChildren(...[...games.values()].map((g) => {
     const active = users.filter((u) => u.game === g.id).length;
-    return el('a', { className: 'gameCard', href: `#/${g.id}` },
-      el('span', { className: 'gameIcon', textContent: g.icon || g.name[0] }),
-      el('strong', { textContent: g.name }),
-      el('span', { className: 'gameAbout', textContent: g.description }),
-      el('span', { className: 'gameMeta', textContent: `${g.players} players · ${active} playing now` }));
+    // The description is on the game's own page; here, just enough to pick.
+    return el('a', { className: 'gameCard', href: `#/${g.id}`, title: g.description },
+      el('span', { className: 'gameIcon', textContent: g.icon || g.name[0], ariaHidden: 'true' }),
+      el('span', { className: 'gameText' },
+        el('strong', { textContent: g.name }),
+        el('span', { className: 'gameMeta' },
+          el('span', { textContent: `${g.players} players` }),
+          el('span', { className: 'gameSep', textContent: ' · ' }),
+          el('span', { textContent: `${active} playing now` }))));
   }));
 }
 
