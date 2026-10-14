@@ -96,6 +96,9 @@
 
 body {
   margin: 0;
+  /* Android's Chrome paints a blue box over anything tapped, the whole
+     board included; the games show what was pressed themselves. */
+  -webkit-tap-highlight-color: transparent;
   min-height: 100dvh;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -121,6 +124,9 @@ button {
   cursor: pointer;
 }
 button:hover:not(:disabled) { filter: brightness(1.15); }
+/* Phones flash a box over whatever is tapped (see body); a pressed button
+   darkens instead. */
+button:active:not(:disabled) { filter: brightness(0.9); }
 button:disabled { opacity: 0.5; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 button.danger { border-color: var(--danger); color: var(--danger); }
