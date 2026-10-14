@@ -52,7 +52,7 @@ The match object needs:
 | `setConnected(seat, connected)` | The player dropped or came back. |
 | `abandon(seat)` | The player stayed away past the grace period; end the match. |
 | `setSpectators(count)` | Optional. Called when the number of people watching changes; put it in the snapshot and call `onChange` if the screen shows it. |
-| `snapshot(seat)` | Everything that player's screen needs, as plain JSON. `seat` is `null` for a spectator, who must get nothing that is hidden from any player. When a match ends the platform saves `snapshot(null)` and later shows it to anyone who wants to look at the match again, so it has to be enough to draw the whole game, not just its last moment. Must include `id` (unique per match), `players`, `you` (the seat), `options` and `over`, and in a game that has bots also `bots` as given to `createMatch`; the platform uses these for the start sound and the rematch button. Leave out anything that seat must not see. |
+| `snapshot(seat)` | Everything that player's screen needs, as plain JSON. `seat` is `null` for a spectator, who must get nothing that is hidden from any player. When a match between people ends the platform saves `snapshot(null)` and later shows it to anyone who wants to look at the match again, so it has to be enough to draw the whole game, not just its last moment. If the snapshot has a `moves` array and it is empty, nothing was played and the match is not saved. Matches against a bot are never saved. Must include `id` (unique per match), `players`, `you` (the seat), `options` and `over`, and in a game that has bots also `bots` as given to `createMatch`; the platform uses these for the start sound and the rematch button. Leave out anything that seat must not see. |
 
 Timers a match starts should be `unref()`ed so they never keep the process alive.
 
@@ -84,7 +84,7 @@ A game does not have to build its screen from scratch. `public/js/kit/` (served 
 
 ## Bots
 
-The server never thinks for a bot. A match against one is an ordinary match, run, watched and saved like any other, in which one seat has nobody behind it: the browser of the player facing the bot works out its moves and sends them with `bot: true`, and the match checks them as it checks anyone's. So the game's screen has to do the playing: when a snapshot has `you` set and a bot in the other seat's entry of `bots`, and it is that seat's turn, act for it. A spectator's screen (`you` is `null`) must not.
+The server never thinks for a bot. A match against one is an ordinary match, run and watched like any other (though not saved), in which one seat has nobody behind it: the browser of the player facing the bot works out its moves and sends them with `bot: true`, and the match checks them as it checks anyone's. So the game's screen has to do the playing: when a snapshot has `you` set and a bot in the other seat's entry of `bots`, and it is that seat's turn, act for it. A spectator's screen (`you` is `null`) must not.
 
 Two things follow. The bot only plays while its opponent's page is open, and that player could send any legal action for it; with nothing at stake, that is acceptable.
 

@@ -509,15 +509,20 @@ export class Lobby {
       for (const u of live.watchers) u.watching = null;
       this.matches.delete(match.id);
       this.stats?.matchEnded({ game: game.meta.id, bots: live.bots, over: match.over, durationMs: Date.now() - live.startedAt });
-      this.archive.save({
-        id: match.id,
-        game: game.meta.id,
-        endedAt: Date.now(),
-        players: seated.map((u) => u.name),
-        options: live.options,
-        over: match.over,
-        snapshot: match.snapshot(null),
-      });
+      // Kept only if two people played it and at least one move was made.
+      const snapshot = match.snapshot(null);
+      const unplayed = Array.isArray(snapshot.moves) && snapshot.moves.length === 0;
+      if (!live.bots.some(Boolean) && !unplayed) {
+        this.archive.save({
+          id: match.id,
+          game: game.meta.id,
+          endedAt: Date.now(),
+          players: seated.map((u) => u.name),
+          options: live.options,
+          over: match.over,
+          snapshot,
+        });
+      }
     }
     const players = seated.filter((u) => u.match === match);
     for (const u of players) {

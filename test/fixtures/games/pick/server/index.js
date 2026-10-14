@@ -1,6 +1,6 @@
 // The smallest possible game, for testing the lobby without chess: the
 // first player to send "claim" wins. "poke" changes what the match looks like
-// without ending it.
+// without ending it, and "resign" ends it without a move.
 
 import { randomUUID } from 'node:crypto';
 import meta from '../meta.js';
@@ -9,16 +9,23 @@ class PickMatch {
   constructor({ players, options, bots, onChange }) {
     Object.assign(this, { id: randomUUID(), players, options, bots, onChange, over: null });
     this.connected = players.map(() => true);
+    this.moves = [];
   }
 
   handle(seat, action) {
     if (this.over) return 'The game is over';
     if (action.action === 'poke') {
       this.pokes = (this.pokes || 0) + 1;
+      this.moves.push('poke');
       this.onChange(this);
       return null;
     }
+    if (action.action === 'resign') {
+      this.finish({ reason: 'resigned', winner: 1 - seat });
+      return null;
+    }
     if (action.action !== 'claim') return 'Unknown action';
+    this.moves.push('claim');
     this.finish({ reason: 'claimed', winner: seat });
     return null;
   }
@@ -44,8 +51,8 @@ class PickMatch {
   }
 
   snapshot(seat) {
-    const { id, players, options, bots, over, connected, spectators = 0, pokes = 0 } = this;
-    return { id, players, bots, you: seat, options, over, connected, spectators, pokes };
+    const { id, players, options, bots, over, connected, spectators = 0, pokes = 0, moves } = this;
+    return { id, players, bots, you: seat, options, over, connected, spectators, pokes, moves };
   }
 }
 

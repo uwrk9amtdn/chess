@@ -137,8 +137,9 @@ test('a match against a bot, whose seat the player\'s browser plays', async (t) 
   assert.deepEqual([again.players, again.you], [['alice', 'wild bot'], 0]);
   alice.send({ type: 'action', action: 'claim' });
   assert.equal((await alice.next('match', (m) => m.snapshot.over)).snapshot.over.winner, 0);
+  // Games against the computer are not kept.
   alice.send({ type: 'history', game: 'pick' });
-  assert.deepEqual((await alice.next('history')).games.map((g) => g.players), [['alice', 'wild bot'], ['calm bot', 'alice']]);
+  assert.deepEqual((await alice.next('history')).games, []);
 });
 
 test('reconnecting mid-match keeps the seat; staying away forfeits', async (t) => {
@@ -325,9 +326,18 @@ test('finished matches are kept and can be looked at again', async (t) => {
   alice.send({ type: 'history', game: 'pick' });
   assert.deepEqual(await alice.next('history'), { type: 'history', game: 'pick', before: null, games: [], more: false });
 
+  // A match that ends before any move is not kept.
+  alice.send({ type: 'invite', to: 'bob', game: 'pick' });
+  bob.send({ type: 'accept', id: (await bob.next('invite')).id });
+  await alice.next('match');
+  alice.send({ type: 'action', action: 'resign' });
+  await alice.next('match', (m) => m.snapshot.over);
+  alice.send({ type: 'history', game: 'pick' });
+  assert.deepEqual((await alice.next('history')).games, []);
+
   alice.send({ type: 'invite', to: 'bob', game: 'pick', options: { prize: 3 } });
   bob.send({ type: 'accept', id: (await bob.next('invite')).id });
-  const { id, you } = (await alice.next('match')).snapshot;
+  const { id, you } = (await alice.next('match', (m) => !m.snapshot.over)).snapshot;
   // A match is not there to review until it is over, and never for a player.
   alice.send({ type: 'review', id });
   assert.match((await alice.next('error')).message, /in a game/);
@@ -476,5 +486,5 @@ test('someone playing the computer can be invited; accepting ends that game', as
   assert.deepEqual(next.players.slice().sort(), ['alice', 'bob']);
   assert.deepEqual(next.bots, [null, null]);
   bob.send({ type: 'history', game: 'pick' });
-  assert.ok((await bob.next('history')).games.some((g) => g.id === botGame.id));
+  assert.ok(!(await bob.next('history')).games.some((g) => g.id === botGame.id));
 });
