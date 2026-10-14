@@ -1,15 +1,17 @@
 # Game Room
 
-A small site for playing board games in the browser with other people, or against the computer. It comes with chess and its variants. One Node.js server runs everything: it keeps the list of players, the invitations and every match, and the browsers only draw what it sends them.
+A small site for playing board games in the browser with other people, or against the computer. It comes with chess and its variants, and Go. One Node.js server runs everything: it keeps the list of players, the invitations and every match, and the browsers only draw what it sends them.
 
 ## What you can do
 
 - **Play chess:** invite another player, or play a computer opponent that runs in your own browser (Stockfish for standard chess and Chess960, a simpler engine for the other variants, at 8 levels).
 - **Variants:** Standard, Chess960, King of the Hill, Three-Check, Antichess, Atomic, Horde, Racing Kings, Crazyhouse and Double 16x16 (two armies each on a 16x16 board).
 - **Time controls:** from 1+0 bullet to 30+20 classical, or a custom one.
-- **During a game:** premoves, takebacks, draw offers, a chat with quick phrases, and stepping back through the moves.
+- **Play Go:** on 9x9, 13x13 or 19x19, with 2 to 9 handicap stones if you like, against a person or a computer opponent that runs in your own browser (a Monte-Carlo tree search, at 8 levels). Area scoring with komi 7.5 (0.5 with handicap) and positional superko. After both players pass they mark the dead stones together, starting from the server's guess, and accept the count or resume play.
+- **Go clocks:** Fischer (minutes plus an increment) or byo-yomi (main time, then periods).
+- **During a game:** premoves, takebacks, draw offers, a chat with quick phrases, and stepping back through the moves (Go has takebacks, passing, the chat and stepping back).
 - **Watching:** follow games in progress, or replay finished ones, from either side of the board.
-- **Looks:** four site themes (Light, Dark, Sepia, Midnight), six board colours and eight piece sets, chosen from the ☰ menu.
+- **Looks:** four site themes (Light, Dark, Sepia, Midnight); for chess six board colours and eight piece sets, for Go six boards and three kinds of stones, chosen from the ☰ menu.
 - **Phones:** the layout works on phones, and the site can be installed as an app. See [ANDROID.md](ANDROID.md) for building an Android APK.
 
 ## Running it
@@ -50,6 +52,7 @@ games/       one folder per game, found by the server at start-up
     server/  rules checks and the match itself (never sent to browsers)
     shared/  the chess engine, used by both the server and the browser
     client/  the game screen, board, bot, themes, pieces and sounds
+  go/        laid out the same way: the rules, clocks and bot in shared/
 test/        tests of the platform
 ```
 
