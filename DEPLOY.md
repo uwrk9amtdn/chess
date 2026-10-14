@@ -22,6 +22,9 @@ Run them on the server, from the checkout:
 | `deploy/game-room update-now` | The same, but skips the five minutes: updates as soon as no game is in progress. Run while an update is already waiting or being tested, it makes that one skip the countdown. |
 | `deploy/game-room update-now --force` | Tests, updates and restarts at once, ending any games in progress. |
 | `deploy/game-room start`, `stop`, `restart` | Control the server directly. `stop` and `restart` end games in progress. |
+| `deploy/game-room set-password` | Sets the admin panel's password (see below). |
+
+`update-now` also applies a commit that `check` leaves alone: one whose tests failed (it tests it again) or whose update was called off.
 
 Only one `check` or `update-now` runs at a time. While one is waiting, a second one says so and leaves it be.
 
@@ -86,7 +89,58 @@ Every check also starts the server if it is not running, so it comes back within
 - A commit whose tests failed is recorded in `~/.game-room/update-failed`. Pushing a newer commit is enough; deleting the file makes the next check try the same commit again.
 - The script does nothing while the checkout has edits of its own to tracked files, and says so in `update.log`.
 
-## The admin interface
+## The admin panel
+
+`https://<your site>/admin` shows who is online and what is being played, the updates (with buttons to check now, update now or call off a waiting update), statistics per day and per game, the server's health, and the finished games, any of which can be deleted. Set its password once, on the server:
+
+```sh
+deploy/game-room set-password
+```
+
+It asks twice without showing what you type, and keeps only a scrypt hash of it, in `~/.game-room/admin-password`, readable only by your user. Run it again to change the password; everyone logged in is logged out. The server reads the file when someone logs in, so no restart is needed.
+
+How it is kept safe:
+
+- **HTTPS only.** Logging in works only through your HTTPS proxy, or directly on the server itself (`ssh -L 9494:localhost:9494 server`, then `http://localhost:9494/admin`). Over plain HTTP from anywhere else the panel refuses.
+- **Guessing is slowed down.** Each address may get the password wrong three times; after that it must wait 1 second, then 2, 4, 8 and so on, up to an hour. More than 30 wrong passwords in ten minutes, from any number of addresses, makes everyone wait until the ten minutes are up (you can still use the commands above over SSH). Every login and wrong password is written to `~/.game-room/server.log` with the address.
+- **Sessions** last 12 hours at most, or 2 hours unused, in a cookie that scripts on the page cannot read, that only travels over HTTPS and never with requests from other sites. Everything the panel shows or changes is checked against the session on the server.
+
+The panel needs your proxy to say who the visitor is (in `X-Real-IP` or `X-Forwarded-For`) and that HTTPS was used (in `X-Forwarded-Proto`). The server believes those headers only from the addresses the proxy connects from, by default the server itself. Two settings in `~/.game-room/config` adapt it to your proxy:
+
+```sh
+proxy_addresses=127.0.0.1   # where the proxy connects from (several: separate with commas)
+proxy_https=yes             # the proxy serves only HTTPS but does not send X-Forwarded-Proto
+```
+
+To find the right values, open `/admin` through your site and unfold **What the server sees of this connection** under the login form. "Connection from" is the proxy's address, for `proxy_addresses`. If X-Forwarded-Proto says "(none)" and your proxy forces HTTPS, set `proxy_https=yes`. After changing them, run `deploy/game-room restart`, and "Taken as visitor address" should then show your own public address and "Counts as HTTPS" yes.
+
+On serv00, the proxy sends the visitor's address in `X-Real-IP`. Switch on "Force SSL" in the website's settings before using `proxy_https=yes`, so the proxy never passes on plain HTTP.
+
+With nginx, for example:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:9494;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;       # the games' WebSocket
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+### What is recorded
+
+Per day, kept for good in `data/stats.jsonl` (one small line a day), and per hour for the last week:
+
+- players: how many different names joined, the most online at once, connections, players who dropped out mid-game, chat messages (counted, never kept);
+- per game: games started and finished, how many against the bot, their average length, how they ended, the options chosen, and per bot level how often the bot won;
+- the server: starts, updates, errors, the most memory used and the longest the server was held up.
+
+Players' names are only used to count today's players, and are forgotten when the day ends. No addresses are recorded, except in the login lines of the server's log.
+
+## The interface for the script
 
 The script talks to the server through `/admin/` on the server's own port: to announce a restart, to ask whether games are still being played, and to call a restart off. Every request needs the token in `~/.game-room/admin-token`, which the script makes the first time it starts the server and which only your user can read. Without the right token, `/admin/` answers "Not found" like any unknown address, so it is safe for the port to be public. The token reaches the server in its environment, not on its command line, so other users cannot see it with `ps`.
 

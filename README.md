@@ -14,6 +14,7 @@ A small site for playing board games in the browser with other people, or agains
 - **During a game:** premoves, takebacks, draw offers, a chat with quick phrases, and stepping back through the moves (Go, Gomoku and Mill have takebacks, the chat and stepping back; Go also passing, Mill also draw offers).
 - **Watching:** follow games in progress, or replay finished ones, from either side of the board.
 - **Looks:** four site themes (Light, Dark, Sepia, Midnight); for chess six board colours and eight piece sets, for Go, Gomoku and Mill six boards, three kinds of stones and coordinates on or off, chosen from the ☰ menu.
+- **Admin panel:** at `/admin`, behind a password, over HTTPS only and slowed against guessing: who is online, the games in progress, updates, statistics per day and per game, the server's health, and finished games to delete. See [DEPLOY.md](DEPLOY.md).
 - **Phones:** the layout works on phones, and the site can be installed as an app. See [ANDROID.md](ANDROID.md) for building an Android APK.
 
 ## Running it

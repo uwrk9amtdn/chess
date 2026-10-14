@@ -1,12 +1,13 @@
 // Every finished match, kept for good so it can be looked at again later.
 //
 // Each game has one file, <dir>/<game id>.jsonl, with one match per line:
-// { id, game, endedAt, players, options, over, snapshot }. Lines are only ever
-// appended. What is kept in memory is an index: everything but the snapshot,
-// plus where the line is in the file and a small preview of how it ended.
+// { id, game, endedAt, players, options, over, snapshot }. Lines are
+// appended, and only taken out by `delete`, which rewrites the file. What is
+// kept in memory is an index: everything but the snapshot, plus where the
+// line is in the file and a small preview of how it ended.
 
 import path from 'node:path';
-import { mkdir, readFile, appendFile, open } from 'node:fs/promises';
+import { mkdir, readFile, appendFile, open, writeFile, rename } from 'node:fs/promises';
 
 const NEWLINE = 10;
 const PAGE_SIZE = 50;
@@ -85,6 +86,40 @@ export class Archive {
     this.writing = this.writing
       .then(() => appendFile(this.file(record.game), line))
       .catch((err) => console.error(`Could not save match ${record.id}:`, err));
+  }
+
+  // Takes a match out for good: from the lists at once, and from its file in
+  // turn with the writes before it. The file is written afresh beside the
+  // old one and then put in its place, so a crash leaves one or the other
+  // whole. Resolves to false if there is no such match.
+  async delete(id) {
+    const entry = this.byId.get(id);
+    if (!entry) return false;
+    const list = this.byGame.get(entry.game);
+    list.splice(list.indexOf(entry), 1);
+    this.byId.delete(id);
+    list.forEach((e, i) => {
+      e.seq = i;
+    });
+    if (!this.dir) return true;
+    // Where each remaining line is now, and where it will be: worked out at
+    // once, so that a match saved meanwhile is put after the new end.
+    const moves = list.map((e) => ({ entry: e, from: e.offset }));
+    let size = 0;
+    for (const e of list) {
+      e.offset = size;
+      size += e.length + 1;
+    }
+    this.sizes.set(entry.game, size);
+    const file = this.file(entry.game);
+    this.writing = this.writing.then(async () => {
+      const data = await readFile(file);
+      const kept = Buffer.concat(moves.flatMap(({ entry: e, from }) => [data.subarray(from, from + e.length), Buffer.from('\n')]));
+      await writeFile(`${file}.tmp`, kept);
+      await rename(`${file}.tmp`, file);
+    }).catch((err) => console.error(`Could not delete match ${id}:`, err));
+    await this.writing;
+    return true;
   }
 
   // The matches of one game, newest first, without their snapshots. `before`

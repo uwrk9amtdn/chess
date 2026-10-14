@@ -1,9 +1,11 @@
 // HTTP server for the site shell and each game's browser code, plus the
-// WebSocket endpoint for the lobby, and a small admin interface for the
-// script that updates the server (deploy/game-room).
+// WebSocket endpoint for the lobby, the admin panel (/admin, see panel.js),
+// and a small interface for the script that updates the server
+// (deploy/game-room).
 
 import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
+import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -11,6 +13,8 @@ import { WebSocketServer } from 'ws';
 import { Lobby } from './lobby.js';
 import { loadGames } from './games.js';
 import { Archive } from './archive.js';
+import { Stats } from './stats.js';
+import { createPanel } from './panel.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(root, 'public');
@@ -35,6 +39,7 @@ const TYPES = {
 
 // Maps a URL path to [directory it must stay inside, path within it].
 function locate(pathname, games, gamesDir) {
+  if (pathname === '/admin' || pathname === '/admin/') return [PUBLIC, 'admin/index.html'];
   if (!pathname.startsWith('/games/')) return [PUBLIC, pathname === '/' ? 'index.html' : pathname.slice(1)];
   const [, id, meta, folder, rest] = GAME_FILE.exec(pathname) || [];
   if (!games.has(id)) return null;
@@ -57,9 +62,19 @@ async function serveStatic(req, res, games, gamesDir) {
   }
   try {
     const body = await readFile(file);
+    // The admin page may not be shown inside another site's page, nor be
+    // listed by search engines.
+    const adminPage = file.startsWith(path.join(PUBLIC, 'admin') + path.sep) ? {
+      'X-Frame-Options': 'DENY',
+      'Content-Security-Policy': "frame-ancestors 'none'",
+      'X-Robots-Tag': 'noindex',
+      'Referrer-Policy': 'no-referrer',
+    } : {};
     res.writeHead(200, {
       'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream',
       'Cache-Control': 'no-cache',
+      'X-Content-Type-Options': 'nosniff',
+      ...adminPage,
     });
     res.end(body);
   } catch {
@@ -67,7 +82,7 @@ async function serveStatic(req, res, games, gamesDir) {
   }
 }
 
-// The admin interface, for the update script on the same machine. Every
+// The interface for the update script on the same machine. Every
 // request must carry the token the server was started with
 // ("Authorization: Bearer <token>"); without a token there is no admin
 // interface, and a wrong one gets the same "Not found" as any unknown path.
@@ -106,11 +121,24 @@ function admin(req, res, lobby, token) {
   send(404, { error: 'unknown admin request' });
 }
 
-// Finished matches are saved in `dataDir`; without one they are only kept
-// until the server stops. `adminToken` turns on the admin interface.
-// Remaining options go to the Lobby. Port 0 picks a free port.
+// The commit running, as "<short hash> <date> <subject>", or null where
+// that cannot be found out.
+function currentVersion() {
+  return new Promise((resolve) => {
+    execFile('git', ['log', '-1', '--format=%h %cs %s'], { cwd: root, timeout: 3000 }, (err, out) => {
+      resolve(err ? null : out.trim() || null);
+    });
+  });
+}
+
+// Finished matches and statistics are saved in `dataDir`; without one they
+// are only kept until the server stops. `adminToken` turns on the
+// interface for the update script; `passwordFile` (the admin password's
+// hash), `stateDir` and `updateScript` are for the admin panel, see
+// panel.js. Remaining options go to the Lobby. Port 0 picks a free port.
 export async function startServer({
-  port = 9494, gamesDir = GAMES, dataDir = null, adminToken = null, ...lobbyOptions
+  port = 9494, gamesDir = GAMES, dataDir = null, adminToken = null,
+  passwordFile = null, stateDir = null, updateScript = null, panelOptions = {}, ...lobbyOptions
 } = {}) {
   const games = await loadGames(gamesDir);
   const archive = new Archive({
@@ -118,10 +146,22 @@ export async function startServer({
     preview: (game, snapshot) => games.get(game)?.preview?.(snapshot) ?? null,
   });
   await archive.load([...games.keys()]);
-  const lobby = new Lobby({ games, archive, ...lobbyOptions });
+  const version = await currentVersion();
+  const stats = new Stats({ dir: dataDir, version });
+  await stats.load();
+  stats.start();
+  const lobby = new Lobby({ games, archive, stats, ...lobbyOptions });
+  const panel = createPanel({ lobby, archive, stats, passwordFile, stateDir, updateScript, version, ...panelOptions });
   const server = http.createServer((req, res) => {
-    if (req.url.startsWith('/admin/')) admin(req, res, lobby, adminToken);
-    else serveStatic(req, res, games, gamesDir);
+    if (req.url.startsWith('/admin/api/')) {
+      panel(req, res).catch((err) => {
+        console.error('Error in the admin panel:', err);
+        stats.error();
+        if (!res.headersSent) res.writeHead(500).end();
+      });
+    } else if (req.url.startsWith('/admin/status') || req.url.startsWith('/admin/restart')) {
+      admin(req, res, lobby, adminToken);
+    } else serveStatic(req, res, games, gamesDir);
   });
   const wss = new WebSocketServer({ server, maxPayload: 4096 });
   wss.on('connection', (ws) => lobby.connect(ws));
@@ -133,9 +173,10 @@ export async function startServer({
         close() {
           for (const ws of wss.clients) ws.terminate();
           server.close();
+          stats.stop();
         },
-        // Resolves once every finished match has been written to disk.
-        saved: () => archive.writing,
+        // Resolves once every finished match and the statistics are on disk.
+        saved: () => Promise.all([archive.writing, stats.save()]),
       });
     });
   });
@@ -146,6 +187,16 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     port: Number(process.env.PORT) || 9494,
     dataDir: process.env.DATA_DIR || DATA,
     adminToken: process.env.ADMIN_TOKEN || null,
+    // Set by deploy/game-room; see DEPLOY.md.
+    passwordFile: process.env.ADMIN_PASSWORD_FILE || null,
+    stateDir: process.env.GAME_ROOM_STATE || null,
+    updateScript: process.env.GAME_ROOM_SCRIPT || null,
+    panelOptions: {
+      // The HTTPS proxy in front: where it connects from, and whether it
+      // serves only HTTPS (see panel.js and DEPLOY.md).
+      ...(process.env.PROXY_ADDRESSES ? { proxies: process.env.PROXY_ADDRESSES.split(/[\s,]+/).filter(Boolean) } : {}),
+      proxyHttps: process.env.PROXY_HTTPS === 'yes',
+    },
   });
   console.log(`Game server running at http://localhost:${server.port}`);
   // Stopped (by deploy/game-room, say): finish writing what was saved first.

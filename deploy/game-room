@@ -17,6 +17,11 @@
 #                         waiting, it goes ahead as soon as no game is.
 #   game-room update-now --force
 #                         update and restart at once, ending any games
+#   game-room set-password
+#                         set the password of the admin panel (/admin)
+#
+# update-now also tries again a commit that failed its tests or whose update
+# was called off; check leaves those alone until a newer commit comes.
 #
 # The server runs from the checkout this script is in. Its pid file, logs and
 # admin token go in ~/.game-room, where an optional file `config` may set, in
@@ -27,16 +32,21 @@
 #   node=/path/to/node          # if node is not /usr/local/bin/node
 #   branch=master               # the branch to follow
 #   warning=300                 # seconds of warning before an update
+#   proxy_addresses=127.0.0.1   # where the HTTPS proxy connects from
+#   proxy_https=no              # yes: the proxy serves only HTTPS
 
 set -u
 
-dir="$(realpath "$(dirname "$(realpath "$0")")/..")"
+self="$(realpath "$0")"
+dir="$(realpath "$(dirname "$self")/..")"
 state="$HOME/.game-room"
 port=9494
 data_dir="$dir/data"
 node=/usr/local/bin/node
 branch=master
 warning=300
+proxy_addresses=
+proxy_https=no
 # shellcheck source=/dev/null
 [ -f "$state/config" ] && . "$state/config"
 
@@ -46,6 +56,7 @@ export PATH
 
 pidfile="$state/daemon.pid"
 token="$state/admin-token"
+password="$state/admin-password"
 mkdir -p "$state"
 
 # Into the update log, and onto the terminal when run by hand (on stderr,
@@ -86,7 +97,8 @@ start()
 	mkdir -p "$data_dir"
 	# The admin interface's token: made once, readable only by this user,
 	# and given to the server in its environment, where `ps` does not show
-	# it to others.
+	# it to others. The server also learns where the admin password's hash
+	# is, and this script, for the admin panel's update buttons.
 	if [ ! -s "$token" ]; then
 		(umask 077 && od -An -tx1 -N16 /dev/urandom | tr -d ' \n' > "$token")
 	fi
@@ -95,6 +107,8 @@ start()
 	# daemon's own pid so that stopping it stops the server too, -o keeps
 	# the server's output, -t names the process.
 	PORT="$port" DATA_DIR="$data_dir" ADMIN_TOKEN="$(cat "$token")" \
+		ADMIN_PASSWORD_FILE="$password" GAME_ROOM_STATE="$state" GAME_ROOM_SCRIPT="$self" \
+		PROXY_ADDRESSES="$proxy_addresses" PROXY_HTTPS="$proxy_https" \
 		daemon -r -P "$pidfile" -o "$state/server.log" -t game-room "$node" server/index.js
 	sleep 1
 	if running; then
@@ -143,6 +157,36 @@ status()
 	if [ -f "$state/update-failed" ]; then
 		echo "commit $(cut -c1-7 "$state/update-failed") failed its tests and is not applied"
 	fi
+	if [ -f "$state/update-skipped" ]; then
+		echo "the update to commit $(cut -c1-7 "$state/update-skipped") was called off"
+	fi
+}
+
+# Asks for the admin panel's password, twice, without showing it, and keeps
+# only its hash, readable by this user alone. Anyone logged in is logged out.
+set_password()
+{
+	if [ ! -t 0 ]; then
+		echo "run this in a terminal" >&2
+		return 1
+	fi
+	trap 'stty echo' EXIT
+	trap 'exit 1' HUP INT TERM
+	stty -echo
+	printf 'New admin password (at least 10 characters): '
+	read -r first
+	printf '\nThe same again: '
+	read -r second
+	stty echo
+	echo
+	if [ "$first" != "$second" ]; then
+		echo "the two do not match; nothing changed" >&2
+		return 1
+	fi
+	# printf is built in, so the password never shows in `ps`.
+	hash="$(printf '%s' "$first" | "$node" "$dir/server/auth.js" hash)" || return 1
+	(umask 077 && printf '%s\n' "$hash" > "$password.tmp") && mv "$password.tmp" "$password"
+	echo "admin password set"
 }
 
 # ---- updates ----
@@ -170,9 +214,14 @@ newer()
 	old="$(git rev-parse HEAD)"
 	new="$(git rev-parse "origin/$branch")"
 	[ "$old" = "$new" ] && return 1
-	# A commit whose tests failed is left alone until a newer one comes.
-	if [ -f "$state/update-failed" ] && [ "$(cat "$state/update-failed")" = "$new" ]; then
-		return 1
+	# A commit whose tests failed, or whose update was called off, is left
+	# alone until a newer one comes, unless asked for by update-now.
+	if [ "$command" != update-now ]; then
+		for marker in update-failed update-skipped; do
+			if [ -f "$state/$marker" ] && [ "$(cat "$state/$marker")" = "$new" ]; then
+				return 1
+			fi
+		done
 	fi
 	if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
 		log "the checkout has local changes; not updating"
@@ -188,7 +237,7 @@ newer()
 		echo "$new" > "$state/update-failed"
 		return 1
 	fi
-	rm -f "$state/update-failed"
+	rm -f "$state/update-failed" "$state/update-skipped"
 	echo "$new"
 }
 
@@ -209,7 +258,8 @@ apply()
 			case "$answer" in
 			ready) break ;;
 			none)
-				log "the restart was called off; not updating"
+				log "the update was called off; leaving $(git rev-parse --short "$new") alone until a newer commit or update-now"
+				echo "$new" > "$state/update-skipped"
 				return 1
 				;;
 			esac
@@ -274,6 +324,8 @@ check | update-now)
 	;;
 esac
 
+command="${1:-}"
+
 # A note from before is for an update that has been dealt with.
 case "${1:-}" in
 check) rm -f "$hurry" ;;
@@ -293,6 +345,7 @@ check)
 	# Whatever happened, the server should be running.
 	running || { start >/dev/null && log "server was not running; started it"; }
 	;;
+set-password) set_password ;;
 update-now)
 	if new="$(newer)"; then
 		if [ "${2:-}" = --force ]; then apply "$new" 0 force; else apply "$new" 0 wait; fi
@@ -302,7 +355,7 @@ update-now)
 	running || { start >/dev/null && log "server was not running; started it"; }
 	;;
 *)
-	echo "usage: $0 start|stop|restart|status|check|update-now [--force]" >&2
+	echo "usage: $0 start|stop|restart|status|check|update-now [--force]|set-password" >&2
 	exit 2
 	;;
 esac

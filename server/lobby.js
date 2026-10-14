@@ -23,12 +23,14 @@ const PAUSED = 'The server restarts for an update in a few minutes, so no new ga
 
 export class Lobby {
   // `games` is the Map from loadGames and `archive` is where finished matches
-  // go. `limits` holds per-game overrides
+  // go. `stats` hears what happens, for the admin panel (see stats.js).
+  // `limits` holds per-game overrides
   // passed to validateOptions, keyed by game id; with `graceMs` it lets tests
   // run short games.
-  constructor({ games, archive = new Archive(), limits = {}, graceMs = 30_000 }) {
+  constructor({ games, archive = new Archive(), stats = null, limits = {}, graceMs = 30_000 }) {
     this.games = games;
     this.archive = archive;
+    this.stats = stats;
     this.limits = limits;
     this.graceMs = graceMs;
     this.users = new Map(); // lower-cased name -> user
@@ -76,8 +78,30 @@ export class Lobby {
     for (const u of this.users.values()) this.send(u, msg);
   }
 
+  // Who is online and what is being played, for the admin panel.
+  overview() {
+    return {
+      players: [...this.users.values()].map((u) => ({
+        name: u.name,
+        connected: Boolean(u.conn),
+        game: u.match ? u.gameId : null,
+        watching: Boolean(u.watching),
+      })),
+      matches: [...this.matches.values()].map((m) => ({
+        id: m.match.id,
+        game: m.game.meta.id,
+        players: m.seated.map((u) => u.name),
+        vsBot: m.bots.some(Boolean),
+        options: m.options,
+        startedAt: m.startedAt,
+        spectators: m.watchers.size,
+      })),
+    };
+  }
+
   connect(ws) {
     const conn = { ws, user: null };
+    this.stats?.connected();
     ws.on('message', (raw) => {
       let msg;
       try {
@@ -90,6 +114,7 @@ export class Lobby {
         this.handle(conn, msg);
       } catch (err) {
         console.error(`Error handling "${msg.type}":`, err);
+        this.stats?.error();
       }
     });
     ws.on('close', () => this.disconnect(conn));
@@ -203,7 +228,9 @@ export class Lobby {
         room: null, lastChatAt: 0, watching: null, following: null,
       };
       this.users.set(key, user);
+      this.stats?.onlineNow(this.users.size);
     }
+    this.stats?.joined(user.name);
     user.conn = conn;
     conn.user = user;
     this.send(user, {
@@ -233,6 +260,7 @@ export class Lobby {
     // game. What the absence costs meanwhile (a running clock, say) is up to
     // the game.
     user.match.setConnected(user.seat, false);
+    this.stats?.dropped();
     user.dropTimer = setTimeout(() => {
       if (user.match) user.match.abandon(user.seat);
       else this.removeUser(user);
@@ -244,6 +272,7 @@ export class Lobby {
     clearTimeout(user.dropTimer);
     if (this.users.get(user.key) !== user) return;
     this.users.delete(user.key);
+    this.stats?.onlineNow(this.users.size);
     user.room = null;
     this.stopWatching(user);
     this.closeInvitesOf(user, 'unavailable');
@@ -348,8 +377,9 @@ export class Lobby {
     // The players of a match can talk to each other. The room outlives the
     // match, until its players move on to another one or leave.
     const room = { id: match.id, members: seated, log: [] };
-    const entry = { match, game, seated, options, watchers: new Set(), preview: null };
+    const entry = { match, game, seated, options, bots, startedAt: Date.now(), watchers: new Set(), preview: null };
     this.matches.set(match.id, entry);
+    this.stats?.matchStarted({ game: game.meta.id, options, bots });
     this.refreshPreview(entry);
     seated.forEach((u, seat) => {
       this.stopWatching(u);
@@ -431,6 +461,7 @@ export class Lobby {
     const message = { from: user.name, text: clean };
     room.log.push(message);
     if (room.log.length > CHAT_LOG_SIZE) room.log.shift();
+    this.stats?.chat();
     for (const u of room.members) {
       if (u.room === room) this.send(u, { type: 'chat', id: room.id, ...message });
     }
@@ -454,6 +485,7 @@ export class Lobby {
     if (live) {
       for (const u of live.watchers) u.watching = null;
       this.matches.delete(match.id);
+      this.stats?.matchEnded({ game: game.meta.id, bots: live.bots, over: match.over, durationMs: Date.now() - live.startedAt });
       this.archive.save({
         id: match.id,
         game: game.meta.id,

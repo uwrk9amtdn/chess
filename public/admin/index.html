@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Game Room admin</title>
+  <link rel="icon" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/admin/admin.css">
+  <script type="module" src="/admin/admin.js"></script>
+</head>
+<body>
+  <header id="topbar">
+    <h1><a href="/">Game Room</a> · admin</h1>
+    <div class="adminBarEnd">
+      <span id="refreshed" class="muted"></span>
+      <button id="logout" hidden>Log out</button>
+    </div>
+  </header>
+
+  <main id="adminMain">
+    <!-- Shown until logged in. -->
+    <section id="login" class="adminCard" hidden>
+      <h2>Log in</h2>
+      <form id="loginForm">
+        <label>Admin password <input id="password" type="password" autocomplete="current-password" required></label>
+        <button class="primary" id="loginButton">Log in</button>
+      </form>
+      <p id="loginMessage" class="adminMessage" role="alert"></p>
+      <!-- For setting up the proxy settings; see DEPLOY.md. -->
+      <details id="seen" class="adminSeen" hidden>
+        <summary>What the server sees of this connection</summary>
+        <table id="seenTable" class="adminTable"></table>
+      </details>
+    </section>
+
+    <!-- Everything else, once logged in. -->
+    <div id="panel" hidden>
+      <section>
+        <h2>Now</h2>
+        <div id="tiles" class="tiles"></div>
+        <p id="restartLine" class="adminMessage"></p>
+        <table id="liveGames" class="adminTable"></table>
+      </section>
+
+      <section>
+        <h2>Updates</h2>
+        <div class="adminActions">
+          <button id="checkUpdates">Check for updates</button>
+          <button id="updateNow">Update now</button>
+          <button id="cancelUpdate" class="danger">Call off the waiting update</button>
+        </div>
+        <p id="updateNote" class="muted"></p>
+        <pre id="updateLog" class="adminLog"></pre>
+      </section>
+
+      <section>
+        <div class="sectionHead">
+          <h2>Activity</h2>
+          <div id="range" class="adminRange" role="group" aria-label="Days shown"></div>
+        </div>
+        <div class="charts">
+          <figure class="adminCard chart" id="playersChart"></figure>
+          <figure class="adminCard chart" id="gamesChart"></figure>
+          <figure class="adminCard chart" id="hoursChart"></figure>
+        </div>
+      </section>
+
+      <section>
+        <h2>Games</h2>
+        <div id="gameCards" class="gameCards"></div>
+      </section>
+
+      <section>
+        <h2>Server health</h2>
+        <div class="charts">
+          <figure class="adminCard chart" id="memoryChart"></figure>
+          <figure class="adminCard chart" id="lagChart"></figure>
+        </div>
+        <table id="healthTable" class="adminTable"></table>
+      </section>
+
+      <section>
+        <h2>Game records</h2>
+        <form id="recordsForm" class="adminActions">
+          <select id="recordsGame" aria-label="Game"></select>
+          <input id="recordsPlayer" placeholder="Player (optional)" aria-label="Player">
+          <button>Show</button>
+        </form>
+        <table id="records" class="adminTable"></table>
+        <button id="moreRecords" hidden>Show more</button>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
