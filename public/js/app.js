@@ -466,7 +466,7 @@ $('changeName').addEventListener('click', () => {
 
 function renderUsers() {
   const sorted = [...users].sort((a, b) => (b.name === me) - (a.name === me) || a.name.localeCompare(b.name));
-  $('userCount').textContent = $('userCountTop').textContent = users.length;
+  $('userCount').textContent = users.length;
   $('users').replaceChildren(...sorted.map((u) => {
     let status = u.game && games.has(u.game) ? `${u.status} · ${games.get(u.game).name}` : u.status;
     if (u.name === me) status = `you · ${status}`;
@@ -482,13 +482,25 @@ function renderUsers() {
   }));
 }
 
-// On a narrow screen the sidebar is put away: a button in the bar at the top
-// opens it over the whole page.
+// The sidebar is a menu, opened from the button in the bar at the top and put
+// away by a tap beside it, its close button or Escape.
 function showPlayers(open) {
+  const was = document.body.classList.contains('playersOpen');
   document.body.classList.toggle('playersOpen', open);
+  $('openPlayers').setAttribute('aria-expanded', String(open));
+  if (open && !was) $('closePlayers').focus();
+  else if (!open && was && $('sidebar').contains(document.activeElement)) $('openPlayers').focus();
 }
 $('openPlayers').addEventListener('click', () => showPlayers(true));
 $('closePlayers').addEventListener('click', () => showPlayers(false));
+$('scrim').addEventListener('click', () => showPlayers(false));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.body.classList.contains('playersOpen')) showPlayers(false);
+});
+// Following a link in the menu, even to the page already shown, puts it away.
+$('sidebar').addEventListener('click', (e) => {
+  if (e.target.closest('a')) showPlayers(false);
+});
 
 function openInvite(name) {
   showPlayers(false);

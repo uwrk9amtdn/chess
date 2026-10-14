@@ -22,6 +22,10 @@ const CHAT_MAX_LENGTH = 140;
 const CHAT_KEY = 'chess.chat';
 // For the material balance next to the clocks, most valuable first.
 const PIECE_VALUES = { q: 9, r: 5, b: 3, n: 3, p: 1 };
+// On a narrow screen the board shrinks so the rest fits under it, but to no
+// less than this part of the width; past that the page scrolls.
+const MIN_FIT = 0.7;
+const NARROW = matchMedia('(max-width: 860px)');
 
 const stylesheet = document.createElement('link');
 stylesheet.rel = 'stylesheet';
@@ -361,12 +365,13 @@ function mount(container, ctx) {
 
   const promotionChoices = el('div');
   const promotionDialog = el('dialog', { className: 'chessPromotion' }, promotionChoices);
+  const table = el('div', { className: 'chessTable' }, top.pocket, boardEl, bottom.pocket);
   const root = el('div', { className: 'chess' });
   root.append(
     el('div', { className: 'chessSide' },
       el('div', { className: 'chessCard chessInfo' }, timeEl, namesEl, watchersEl, resultEl),
       chatCard),
-    el('div', { className: 'chessTable' }, top.pocket, boardEl, bottom.pocket),
+    table,
     el('div', { className: 'chessControls' },
       top.material, top.clock,
       el('div', { className: 'chessCard chessPanel' },
@@ -604,7 +609,33 @@ function mount(container, ctx) {
 
     updateClocks();
     renderActions();
+    scheduleFit();
   }
+
+  // On a narrow screen everything is stacked under the board, which is as
+  // wide as the screen; on a short one the board gives up just enough of its
+  // size for the rest to fit without scrolling.
+  function fitBoard() {
+    table.style.width = '';
+    if (!NARROW.matches) return;
+    const page = document.scrollingElement;
+    const full = table.getBoundingClientRect().width;
+    // Twice, as the pockets of some variants do not shrink with the board.
+    for (let i = 0; i < 2; i++) {
+      const over = page.scrollHeight - page.clientHeight;
+      if (over <= 0) return;
+      const width = table.getBoundingClientRect().width;
+      table.style.width = `${Math.max(full * MIN_FIT, width - over)}px`;
+    }
+  }
+  // Measured just before the next paint, once the platform has finished
+  // changing the page around the game too (its header, the list it hides).
+  let fitFrame = 0;
+  function scheduleFit() {
+    cancelAnimationFrame(fitFrame);
+    fitFrame = requestAnimationFrame(fitBoard);
+  }
+  window.addEventListener('resize', scheduleFit);
 
   // The squares a king wins by reaching, where the variant has such squares.
   function markedSquares(variant) {
@@ -769,6 +800,8 @@ function mount(container, ctx) {
       release();
       chatOpen.remove();
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', scheduleFit);
+      cancelAnimationFrame(fitFrame);
       container.replaceChildren();
     },
   };

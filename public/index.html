@@ -19,17 +19,24 @@
   </script>
 </head>
 <body>
-  <!-- Shown on narrow screens only, where the sidebar is put away. -->
+  <!-- The bar along the top; its ☰ button opens the sidebar, a menu that
+       slides in from the left. -->
   <header id="topbar">
+    <button id="openPlayers" class="iconButton" aria-label="Menu" aria-controls="sidebar" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </button>
     <h1><a href="#/">Game Room</a></h1>
     <!-- The game on screen may put buttons of its own here. -->
     <div id="toolbar"></div>
-    <button id="openPlayers">Players <span id="userCountTop"></span></button>
   </header>
 
   <aside id="sidebar">
-    <button id="closePlayers">Close</button>
-    <h1><a href="#/">Game Room</a></h1>
+    <div id="sidebarHead">
+      <h1><a href="#/">Game Room</a></h1>
+      <button id="closePlayers" class="iconButton" aria-label="Close menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6z"/></svg>
+      </button>
+    </div>
     <div id="meRow">
       <p id="me"></p>
       <button id="changeName" hidden>Change name</button>
@@ -41,6 +48,9 @@
       <button id="soundToggle"></button>
     </div>
   </aside>
+
+  <!-- Dims the page behind the menu; a tap on it puts the menu away. -->
+  <div id="scrim"></div>
 
   <main>
     <section id="home">

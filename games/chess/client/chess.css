@@ -9,9 +9,10 @@
 
 .chess { display: flex; gap: 16px; justify-content: center; align-items: flex-start; }
 .chessSide { width: 260px; flex: none; display: flex; flex-direction: column; gap: 16px; }
-.chessTable { flex: 1; max-width: calc(100dvh - 100px); min-width: 0; }
+/* As tall as the page allows under the platform's top bar and header. */
+.chessTable { flex: 1; max-width: calc(100dvh - var(--board-room, 150px)); min-width: 0; }
 /* Room for the pockets above and below the board. */
-.chessTable:has(.chessPocket:not([hidden])) { max-width: calc(100dvh - 220px); }
+.chessTable:has(.chessPocket:not([hidden])) { --board-room: 270px; }
 .chessControls { width: 280px; flex: none; display: flex; flex-direction: column; align-self: center; }
 .chessCard { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
 
@@ -42,6 +43,9 @@
 /* Only a narrow screen puts the chat away, behind a button in the top bar. */
 .chessChatClose { display: none; }
 .chessChatOpen { position: relative; }
+@media (min-width: 861px) {
+  .chessChatOpen { display: none; }
+}
 .chessChatOpen.unread::after {
   content: '';
   position: absolute;
@@ -347,6 +351,28 @@ dialog.chessPromotion { width: auto; padding: 12px; }
   .chessSide { order: 3; width: 100%; flex-direction: row; align-items: flex-start; }
   .chessSide > * { flex: 1; min-width: 0; }
 }
+/* Not wide enough for the details on the left as well: they go under the
+   clocks and moves instead, and the board takes the room. */
+@media (min-width: 861px) and (max-aspect-ratio: 3/2) {
+  .chess {
+    display: grid;
+    grid-template-columns: minmax(0, calc(100dvh - var(--board-room, 150px))) 280px;
+    grid-template-rows: auto 1fr;
+    grid-template-areas: "table controls" "table side";
+    justify-content: center;
+    align-items: start;
+  }
+  .chess:has(.chessPocket:not([hidden])) { --board-room: 270px; }
+  .chessTable { grid-area: table; max-width: none; }
+  .chessControls { grid-area: controls; align-self: start; }
+  .chessSide { grid-area: side; width: auto; flex-direction: column; align-items: stretch; }
+}
+/* A short screen has a smaller board: the clocks and moves beside it shrink
+   too, so they are no taller than it. */
+@media (min-width: 861px) and (max-height: 760px) {
+  .chessClock { font-size: 36px; }
+  .chessMoves { height: 96px; }
+}
 @media (max-width: 860px) {
   /* One column: the opponent's name and clock on a line above the board,
      our own below it, then the moves in a single row, and the rest. The
@@ -369,7 +395,8 @@ dialog.chessPromotion { width: auto; padding: 12px; }
     align-items: center;
   }
   .chessControls, .chessPanel { display: contents; }
-  .chessTable { grid-area: table; max-width: none; margin: 6px 0; }
+  /* index.js narrows it on a short screen, so the rest fits below. */
+  .chessTable { grid-area: table; justify-self: center; width: 100%; max-width: none; margin: 6px 0; }
   .chessSide { grid-area: side; flex-direction: column; align-items: stretch; margin-top: 10px; }
 
   .chessPlayer.top { grid-area: topPlayer; }

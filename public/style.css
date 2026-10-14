@@ -98,7 +98,8 @@ body {
   margin: 0;
   min-height: 100dvh;
   display: grid;
-  grid-template-columns: 270px 1fr;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
   background: var(--bg);
   color: var(--text);
   font: 15px/1.4 system-ui, sans-serif;
@@ -133,19 +134,58 @@ input, select {
   color: var(--text);
 }
 
-/* ---- sidebar ---- */
+/* ---- top bar and menu ---- */
 
-#topbar, #closePlayers { display: none; }
+/* A slim bar along the top; the ☰ button in it opens the menu (the player
+   list and settings), which slides in from the left over the page. */
+#topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+#topbar h1 { font-size: 18px; }
+#topbar button { padding: 4px 10px; }
+#topbar .iconButton { margin-left: -6px; padding: 6px; }
+.iconButton { display: grid; place-items: center; padding: 6px; border: 0; background: none; }
+.iconButton svg { width: 24px; height: 24px; fill: var(--text); }
+#sidebarHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#closePlayers { margin-right: -6px; }
 #toolbar { display: flex; gap: 8px; margin-left: auto; }
 
 #sidebar {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 15;
+  width: min(300px, 85vw);
   padding: 16px;
+  overflow-y: auto;
   background: var(--surface);
-  border-right: 1px solid var(--border);
-  min-width: 0;
+  box-shadow: var(--shadow);
+  transform: translateX(-100%);
+  /* Hidden, out of reach of Tab, only once it has slid away. */
+  visibility: hidden;
+  transition: transform 0.2s ease, visibility 0s 0.2s;
+}
+body.playersOpen #sidebar { transform: none; visibility: visible; transition: transform 0.2s ease; }
+#scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 14;
+  background: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+body.playersOpen #scrim { opacity: 1; pointer-events: auto; }
+body.playersOpen { overflow: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  #sidebar, #scrim { transition: none; }
 }
 #meRow { display: flex; align-items: center; gap: 8px; }
 #me { flex: 1; min-width: 0; color: var(--muted); min-height: 1.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -271,22 +311,7 @@ dialog h2 { font-size: 18px; color: var(--text); text-transform: none; letter-sp
 .hint { color: var(--muted); font-size: 13px; }
 .formError { color: var(--danger); min-height: 1.4em; }
 
-/* A narrow screen keeps a slim bar at the top; the sidebar opens over the
-   whole page from the button in it. */
+/* A narrow screen has less room around the page. */
 @media (max-width: 860px) {
-  body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
-  #topbar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-  }
-  #topbar h1 { font-size: 18px; }
-  #topbar button { padding: 4px 10px; }
-  #sidebar { display: none; border-right: 0; }
-  body.playersOpen #sidebar { display: flex; position: fixed; inset: 0; z-index: 15; }
-  #closePlayers { display: block; align-self: flex-end; }
   main { padding: 10px; }
 }
