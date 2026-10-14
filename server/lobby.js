@@ -5,7 +5,8 @@
 // Client -> server: join, invite, cancel, accept, decline, bot, action, chat,
 //                   watch, unwatch, follow, unfollow, history, review
 // Server -> client: joined, joinError, users, matches, invite, inviteSent,
-//                   inviteClosed, match, preview, chat, chatLog, history, error
+//                   inviteClosed, match, preview, chat, chatLog, history,
+//                   restart, error
 
 import { randomUUID } from 'node:crypto';
 import { Archive } from './archive.js';
@@ -18,6 +19,7 @@ const CHAT_LOG_SIZE = 100;
 // Previews are pushed on every change only while a game has at most this many
 // matches going; beyond it they are refreshed when a match starts or ends.
 const PREVIEW_LIMIT = 12;
+const PAUSED = 'The server restarts for an update in a few minutes, so no new games start until then.';
 
 export class Lobby {
   // `games` is the Map from loadGames and `archive` is where finished matches
@@ -32,6 +34,46 @@ export class Lobby {
     this.users = new Map(); // lower-cased name -> user
     this.invites = new Map(); // id -> invite
     this.matches = new Map(); // id -> { match, game, seated, options, watchers } while it is played
+    // A restart for an update, once announced: { at }, the time it may
+    // happen; it waits beyond that for the matches being played to end.
+    this.restart = null;
+  }
+
+  // ---- restarting for an update (see server/index.js and DEPLOY.md) ----
+
+  // Announces a restart in `ms`, or sooner if one is announced already, and
+  // stops new matches from starting until then.
+  scheduleRestart(ms) {
+    const at = Date.now() + Math.max(0, ms);
+    if (!this.restart || at < this.restart.at) this.restart = { at };
+    for (const invite of [...this.invites.values()]) this.closeInvite(invite, 'unavailable');
+    this.broadcastRestart();
+    return this.restartStatus();
+  }
+
+  cancelRestart() {
+    this.restart = null;
+    this.broadcastRestart();
+  }
+
+  // Where an announced restart stands: how long until it may happen, how
+  // many matches are still being played, and whether it may happen now.
+  restartStatus() {
+    if (!this.restart) return null;
+    const msLeft = Math.max(0, this.restart.at - Date.now());
+    return { msLeft, games: this.matches.size, ready: msLeft === 0 && this.matches.size === 0 };
+  }
+
+  // What the players' screens show about it: nothing (msLeft null), or the
+  // time left and the matches still being played.
+  restartNotice() {
+    const status = this.restartStatus();
+    return { type: 'restart', msLeft: status ? status.msLeft : null, games: status ? status.games : 0 };
+  }
+
+  broadcastRestart() {
+    const msg = this.restartNotice();
+    for (const u of this.users.values()) this.send(u, msg);
   }
 
   connect(ws) {
@@ -176,6 +218,7 @@ export class Lobby {
     this.broadcastUsers();
     user.following = null;
     this.send(user, { type: 'matches', matches: this.liveMatches() });
+    if (this.restart) this.send(user, this.restartNotice());
     if (user.room) this.send(user, { type: 'chatLog', id: user.room.id, messages: user.room.log });
     if (user.match) user.match.setConnected(user.seat, true);
   }
@@ -213,6 +256,7 @@ export class Lobby {
     const game = typeof msg.game === 'string' ? this.games.get(msg.game) : undefined;
     if (!game) return fail('Unknown game.');
     if (!to || to === from) return fail('That player is not available.');
+    if (this.restart) return fail(PAUSED);
     if (from.match) return fail('You are already in a game.');
     if (to.match) return fail(`${to.name} is busy.`);
     if ([...this.invites.values()].some((i) => i.from === from)) {
@@ -255,6 +299,10 @@ export class Lobby {
   accept(user, id) {
     const invite = this.invites.get(id);
     if (!invite || invite.to !== user) return;
+    if (this.restart) {
+      this.closeInvite(invite, 'unavailable');
+      return this.send(user, { type: 'error', message: PAUSED });
+    }
     const { from, to } = invite;
     if (from.match || to.match) return this.closeInvite(invite, 'unavailable');
     this.closeInvite(invite, 'accepted');
@@ -272,6 +320,7 @@ export class Lobby {
     const game = typeof msg.game === 'string' ? this.games.get(msg.game) : undefined;
     if (!game) return fail('Unknown game.');
     if (!game.validateBot) return fail('This game cannot be played against the computer.');
+    if (this.restart) return fail(PAUSED);
     if (user.match) return fail('You are already in a game.');
     const requested = msg.options && typeof msg.options === 'object' ? msg.options : {};
     const { options, error } = game.validateOptions(requested, this.limits[game.meta.id]);
@@ -425,5 +474,7 @@ export class Lobby {
     for (const u of players) if (!u.conn) this.removeUser(u);
     this.broadcastUsers();
     this.broadcastMatches();
+    // One match fewer to wait for.
+    if (this.restart) this.broadcastRestart();
   }
 }

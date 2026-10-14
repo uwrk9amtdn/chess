@@ -153,6 +153,17 @@ input, select {
   border-bottom: 1px solid var(--border);
 }
 #topbar h1 { font-size: 18px; }
+/* A line of its own under the bar, the full width of the page. */
+#topbar { flex-wrap: wrap; }
+#restartBanner {
+  flex-basis: calc(100% + 24px);
+  margin: 6px -12px -6px;
+  padding: 8px 12px;
+  background: var(--busy);
+  color: #fff;
+  font-weight: 600;
+  text-align: center;
+}
 #topbar button { padding: 4px 10px; }
 #topbar .iconButton { margin-left: -6px; padding: 6px; }
 .iconButton { display: grid; place-items: center; padding: 6px; border: 0; background: none; }

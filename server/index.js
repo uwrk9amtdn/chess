@@ -1,7 +1,9 @@
 // HTTP server for the site shell and each game's browser code, plus the
-// WebSocket endpoint for the lobby.
+// WebSocket endpoint for the lobby, and a small admin interface for the
+// script that updates the server (deploy/game-room).
 
 import http from 'node:http';
+import { timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -65,10 +67,51 @@ async function serveStatic(req, res, games, gamesDir) {
   }
 }
 
+// The admin interface, for the update script on the same machine. Every
+// request must carry the token the server was started with
+// ("Authorization: Bearer <token>"); without a token there is no admin
+// interface, and a wrong one gets the same "Not found" as any unknown path.
+//
+//   GET    /admin/status            { restart, games, players }
+//   POST   /admin/restart?in=<s>    announce a restart in s seconds (or
+//                                   sooner, if one is announced already)
+//   DELETE /admin/restart           call it off
+//
+// `restart` is null, or { msLeft, games, ready }: the restart may happen
+// once `ready`, when the time is up and no match is being played.
+function admin(req, res, lobby, token) {
+  const send = (status, body) => {
+    res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(body));
+  };
+  const given = Buffer.from(req.headers.authorization ?? '');
+  const expected = Buffer.from(`Bearer ${token}`);
+  if (!token || given.length !== expected.length || !timingSafeEqual(given, expected)) {
+    res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not found');
+    return;
+  }
+  const url = new URL(req.url, 'http://localhost');
+  const status = () => ({ restart: lobby.restartStatus(), games: lobby.matches.size, players: lobby.users.size });
+  if (url.pathname === '/admin/status' && req.method === 'GET') return send(200, status());
+  if (url.pathname === '/admin/restart' && req.method === 'POST') {
+    const seconds = Number(url.searchParams.get('in') ?? 300);
+    if (!(seconds >= 0)) return send(400, { error: 'in must be a number of seconds' });
+    lobby.scheduleRestart(seconds * 1000);
+    return send(200, status());
+  }
+  if (url.pathname === '/admin/restart' && req.method === 'DELETE') {
+    lobby.cancelRestart();
+    return send(200, status());
+  }
+  send(404, { error: 'unknown admin request' });
+}
+
 // Finished matches are saved in `dataDir`; without one they are only kept
-// until the server stops. Remaining options go to the Lobby. Port 0 picks a
-// free port.
-export async function startServer({ port = 9494, gamesDir = GAMES, dataDir = null, ...lobbyOptions } = {}) {
+// until the server stops. `adminToken` turns on the admin interface.
+// Remaining options go to the Lobby. Port 0 picks a free port.
+export async function startServer({
+  port = 9494, gamesDir = GAMES, dataDir = null, adminToken = null, ...lobbyOptions
+} = {}) {
   const games = await loadGames(gamesDir);
   const archive = new Archive({
     dir: dataDir,
@@ -76,7 +119,10 @@ export async function startServer({ port = 9494, gamesDir = GAMES, dataDir = nul
   });
   await archive.load([...games.keys()]);
   const lobby = new Lobby({ games, archive, ...lobbyOptions });
-  const server = http.createServer((req, res) => serveStatic(req, res, games, gamesDir));
+  const server = http.createServer((req, res) => {
+    if (req.url.startsWith('/admin/')) admin(req, res, lobby, adminToken);
+    else serveStatic(req, res, games, gamesDir);
+  });
   const wss = new WebSocketServer({ server, maxPayload: 4096 });
   wss.on('connection', (ws) => lobby.connect(ws));
   return new Promise((resolve, reject) => {
@@ -88,12 +134,26 @@ export async function startServer({ port = 9494, gamesDir = GAMES, dataDir = nul
           for (const ws of wss.clients) ws.terminate();
           server.close();
         },
+        // Resolves once every finished match has been written to disk.
+        saved: () => archive.writing,
       });
     });
   });
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { port } = await startServer({ port: Number(process.env.PORT) || 9494, dataDir: process.env.DATA_DIR || DATA });
-  console.log(`Game server running at http://localhost:${port}`);
+  const server = await startServer({
+    port: Number(process.env.PORT) || 9494,
+    dataDir: process.env.DATA_DIR || DATA,
+    adminToken: process.env.ADMIN_TOKEN || null,
+  });
+  console.log(`Game server running at http://localhost:${server.port}`);
+  // Stopped (by deploy/game-room, say): finish writing what was saved first.
+  for (const signal of ['SIGTERM', 'SIGINT']) {
+    process.once(signal, async () => {
+      server.close();
+      await server.saved();
+      process.exit(0);
+    });
+  }
 }

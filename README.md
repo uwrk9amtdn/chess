@@ -36,6 +36,8 @@ Two environment variables change the defaults:
 
 Everything else lives only in memory: players, invitations and matches in progress are lost when the server restarts. A player who drops out mid-game has 30 seconds to come back before the game counts them as gone.
 
+To keep it running on a FreeBSD server, without root, and have it update itself after every push, see [DEPLOY.md](DEPLOY.md).
+
 ## Tests
 
 ```sh

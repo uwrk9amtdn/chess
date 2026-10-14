@@ -1,0 +1,308 @@
+#!/bin/sh
+#
+# Runs Game Room on FreeBSD as an ordinary user, without root: kept alive by
+# daemon(8), started at boot and brought up to date by the user's own
+# crontab. See DEPLOY.md.
+#
+#   game-room start       start the server, unless it is running
+#   game-room stop        stop it (ending any games in progress)
+#   game-room restart     stop it and start it again
+#   game-room status      whether it is running, and any update waiting
+#   game-room check       look for new commits now; if there are, test them,
+#                         warn the players, wait five minutes and for the
+#                         games in progress to end, then update and restart.
+#                         Cron runs this every five minutes.
+#   game-room update-now  the same without the five minutes: update as soon
+#                         as no game is in progress. If an update is already
+#                         waiting, it goes ahead as soon as no game is.
+#   game-room update-now --force
+#                         update and restart at once, ending any games
+#
+# The server runs from the checkout this script is in. Its pid file, logs and
+# admin token go in ~/.game-room, where an optional file `config` may set, in
+# sh syntax:
+#
+#   port=9494                   # the port to listen on
+#   data_dir=/path/to/data      # finished games; the checkout's data/ if unset
+#   node=/path/to/node          # if node is not /usr/local/bin/node
+#   branch=master               # the branch to follow
+#   warning=300                 # seconds of warning before an update
+
+set -u
+
+dir="$(realpath "$(dirname "$(realpath "$0")")/..")"
+state="$HOME/.game-room"
+port=9494
+data_dir="$dir/data"
+node=/usr/local/bin/node
+branch=master
+warning=300
+# shellcheck source=/dev/null
+[ -f "$state/config" ] && . "$state/config"
+
+# Cron runs with a bare PATH; npm is found next to node.
+PATH="${node%/*}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+export PATH
+
+pidfile="$state/daemon.pid"
+token="$state/admin-token"
+mkdir -p "$state"
+
+# Into the update log, and onto the terminal when run by hand (on stderr,
+# as some of it comes from inside $(...)).
+log()
+{
+	printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$state/update.log"
+	[ -t 2 ] && echo "$*" >&2
+	return 0
+}
+
+# Where an announced restart stands, from the server itself: "none",
+# "waiting <seconds> <games>" or "ready". Fails if the server cannot be
+# asked (not running, or started before it had an admin interface).
+admin()
+{
+	"$node" "$dir/deploy/admin.mjs" "$port" "$token" "$@" 2>/dev/null
+}
+
+# ---- the server ----
+
+# The pid of the daemon(8) looking after the server, if it is running. The
+# process title is checked too, as a pid left over from before a reboot may
+# now belong to something else.
+running()
+{
+	[ -f "$pidfile" ] || return 1
+	pid="$(cat "$pidfile")"
+	ps -p "$pid" -o args= 2>/dev/null | grep -q game-room
+}
+
+start()
+{
+	if running; then
+		echo "already running (pid $pid)"
+		return 0
+	fi
+	mkdir -p "$data_dir"
+	# The admin interface's token: made once, readable only by this user,
+	# and given to the server in its environment, where `ps` does not show
+	# it to others.
+	if [ ! -s "$token" ]; then
+		(umask 077 && od -An -tx1 -N16 /dev/urandom | tr -d ' \n' > "$token")
+	fi
+	cd "$dir" || exit 1
+	# -r starts the server again a second after it stops, -P records
+	# daemon's own pid so that stopping it stops the server too, -o keeps
+	# the server's output, -t names the process.
+	PORT="$port" DATA_DIR="$data_dir" ADMIN_TOKEN="$(cat "$token")" \
+		daemon -r -P "$pidfile" -o "$state/server.log" -t game-room "$node" server/index.js
+	sleep 1
+	if running; then
+		echo "started (pid $pid)"
+	else
+		echo "did not start; see $state/server.log"
+		return 1
+	fi
+}
+
+stop()
+{
+	if ! running; then
+		echo "not running"
+		return 0
+	fi
+	kill "$pid"
+	for _ in 1 2 3 4 5 6 7 8 9 10; do
+		running || break
+		sleep 1
+	done
+	if running; then
+		echo "still running (pid $pid)"
+		return 1
+	fi
+	rm -f "$pidfile"
+	echo "stopped"
+}
+
+status()
+{
+	if ! running; then
+		echo "stopped"
+		return 0
+	fi
+	echo "running (pid $pid)"
+	answer="$(admin status)"
+	case "$answer" in
+	waiting*)
+		seconds="$(echo "$answer" | cut -d' ' -f2)"
+		games="$(echo "$answer" | cut -d' ' -f3)"
+		echo "an update is waiting: $((seconds / 60)):$(printf '%02d' $((seconds % 60))) to go, $games game(s) in progress"
+		;;
+	ready) echo "an update is about to be applied" ;;
+	esac
+	if [ -f "$state/update-failed" ]; then
+		echo "commit $(cut -c1-7 "$state/update-failed") failed its tests and is not applied"
+	fi
+}
+
+# ---- updates ----
+
+# Tests a commit in a worktree of its own, so that the running server's
+# files stay as they are until the moment it restarts.
+tested()
+{
+	staging="$state/staging"
+	git worktree remove --force "$staging" >/dev/null 2>&1
+	rm -rf "$staging"
+	git worktree prune
+	git worktree add --quiet --detach "$staging" "$1" || return 1
+	(cd "$staging" && npm ci --no-audit --no-fund >/dev/null 2>&1 && npm test >/dev/null 2>&1)
+	result=$?
+	git worktree remove --force "$staging" >/dev/null 2>&1
+	return $result
+}
+
+# Prints the commit to update to, if there is one and its tests pass.
+newer()
+{
+	cd "$dir" || { log "no checkout at $dir"; return 1; }
+	git fetch --quiet origin "$branch" || { log "git fetch failed"; return 1; }
+	old="$(git rev-parse HEAD)"
+	new="$(git rev-parse "origin/$branch")"
+	[ "$old" = "$new" ] && return 1
+	# A commit whose tests failed is left alone until a newer one comes.
+	if [ -f "$state/update-failed" ] && [ "$(cat "$state/update-failed")" = "$new" ]; then
+		return 1
+	fi
+	if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+		log "the checkout has local changes; not updating"
+		return 1
+	fi
+	if ! git merge-base --is-ancestor "$old" "$new"; then
+		log "$(git rev-parse --short "$new") does not follow on from what is running; not updating"
+		return 1
+	fi
+	log "testing $(git log -1 --format='%h %s' "$new")"
+	if ! tested "$new"; then
+		log "tests failed for $(git rev-parse --short "$new"); staying on $(git rev-parse --short "$old")"
+		echo "$new" > "$state/update-failed"
+		return 1
+	fi
+	rm -f "$state/update-failed"
+	echo "$new"
+}
+
+# Warns the players, waits `$2` seconds and then for the games in progress
+# to end (unless `$3` is "force"), then updates to commit `$1` and restarts.
+apply()
+{
+	new="$1"
+	seconds="$2"
+	[ -f "$hurry" ] && seconds=0
+	cd "$dir" || return 1
+	if [ "$3" != force ] && running && admin announce "$seconds" >/dev/null; then
+		log "restart announced, in $seconds seconds or once no game is in progress"
+		while :; do
+			sleep 5
+			[ -f "$hurry" ] && admin announce 0 >/dev/null
+			answer="$(admin status)" || break
+			case "$answer" in
+			ready) break ;;
+			none)
+				log "the restart was called off; not updating"
+				return 1
+				;;
+			esac
+		done
+	elif [ "$3" != force ] && running; then
+		log "the server cannot be told of the restart (it predates the admin interface); restarting at once"
+	fi
+	rm -f "$hurry"
+	old="$(git rev-parse HEAD)"
+	stop >/dev/null
+	git merge --quiet --ff-only "$new" || { log "cannot move to $new"; start >/dev/null; return 1; }
+	if ! git diff --quiet "$old" "$new" -- package.json package-lock.json; then
+		npm ci --no-audit --no-fund >/dev/null 2>&1 || log "npm ci failed"
+	fi
+	if start >/dev/null; then
+		log "updated to $(git log -1 --format='%h %s' "$new") and restarted"
+	else
+		log "updated to $(git rev-parse --short "$new") but the server did not start; see $state/server.log"
+	fi
+}
+
+# check and update-now run one at a time. The lock is a directory, which
+# only one run can create, holding that run's pid. (A lock held through an
+# open file would be inherited by the server the run restarts, and never let
+# go.) A lock whose run is gone, killed say, is taken over.
+lock()
+{
+	lockdir="$state/update.lock"
+	if mkdir "$lockdir" 2>/dev/null; then
+		echo $$ > "$lockdir/pid"
+		trap 'rm -rf "$lockdir"' EXIT
+		trap 'exit 1' HUP INT TERM
+		return 0
+	fi
+	other="$(cat "$lockdir/pid" 2>/dev/null)"
+	if [ -n "$other" ] && ps -p "$other" -o args= 2>/dev/null | grep -q game-room; then
+		return 1
+	fi
+	rm -rf "$lockdir"
+	mkdir "$lockdir" 2>/dev/null || return 1
+	echo $$ > "$lockdir/pid"
+	trap 'rm -rf "$lockdir"' EXIT
+	trap 'exit 1' HUP INT TERM
+}
+
+# With the lock taken, update-now hurries the update under way instead: it
+# leaves a note that the update picks up, whether it is still testing or
+# already waiting.
+hurry="$state/hurry"
+case "${1:-}" in
+check | update-now)
+	if ! lock; then
+		if [ "$1" = update-now ]; then
+			touch "$hurry"
+			[ "$(admin status)" != none ] && admin announce 0 >/dev/null
+			log "the update under way now goes ahead as soon as no game is in progress"
+		elif [ -t 2 ]; then
+			echo "an update is already under way; see $state/update.log" >&2
+		fi
+		exit 0
+	fi
+	;;
+esac
+
+# A note from before is for an update that has been dealt with.
+case "${1:-}" in
+check) rm -f "$hurry" ;;
+esac
+
+case "${1:-}" in
+start) start ;;
+stop) stop ;;
+restart) stop && start ;;
+status) status ;;
+check)
+	if new="$(newer)"; then
+		apply "$new" "$warning" wait
+	elif [ -t 1 ]; then
+		echo "nothing to update"
+	fi
+	# Whatever happened, the server should be running.
+	running || { start >/dev/null && log "server was not running; started it"; }
+	;;
+update-now)
+	if new="$(newer)"; then
+		if [ "${2:-}" = --force ]; then apply "$new" 0 force; else apply "$new" 0 wait; fi
+	elif [ -t 1 ]; then
+		echo "nothing to update"
+	fi
+	running || { start >/dev/null && log "server was not running; started it"; }
+	;;
+*)
+	echo "usage: $0 start|stop|restart|status|check|update-now [--force]" >&2
+	exit 2
+	;;
+esac

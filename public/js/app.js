@@ -144,9 +144,35 @@ const INVITE_CLOSED = {
   unavailable: 'is no longer available',
 };
 
+// An update is coming: when the server restarts ({ at } in performance.now()
+// time) and how many games it still waits for; null when none is coming.
+let restartNotice = null;
+
+// The line under the bar that counts down to the restart.
+function renderRestart() {
+  const banner = $('restartBanner');
+  banner.hidden = !restartNotice;
+  if (!restartNotice) return;
+  const left = restartNotice.at - performance.now();
+  const waiting = restartNotice.games;
+  if (left > 0) {
+    const seconds = Math.ceil(left / 1000);
+    const time = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    banner.textContent = `The server restarts for an update in ${time}. New games can start again after it.`;
+  } else if (waiting) {
+    const games = waiting === 1 ? 'the game in progress is' : `the ${waiting} games in progress are`;
+    banner.textContent = `The server restarts for an update as soon as ${games} over. New games can start again after it.`;
+  } else banner.textContent = 'The server is restarting for an update…';
+}
+setInterval(renderRestart, 1000);
+
 const handlers = {
   async joined(msg) {
     me = msg.name;
+    // A server that has just started has no restart coming; one that has
+    // says so after this message.
+    restartNotice = null;
+    renderRestart();
     saveSession({ name: msg.name, token: msg.token });
     rememberName(msg.name);
     $('nameDialog').close();
@@ -249,6 +275,11 @@ const handlers = {
     chat = { id: msg.id, messages: msg.messages };
     showChat();
   },
+  restart(msg) {
+    restartNotice = msg.msLeft === null ? null : { at: performance.now() + msg.msLeft, games: msg.games };
+    renderRestart();
+    render();
+  },
   error(msg) {
     toast(msg.message);
     // Lets the game undo anything it showed before the server refused it.
@@ -314,6 +345,8 @@ function render() {
   $('gameDescription').textContent = meta.description;
   $('gameHint').hidden = Boolean(match);
   $('playBot').hidden = !clients.get(route).botForm;
+  // No new games while the server waits to restart.
+  $('playBot').disabled = Boolean(restartNotice);
   if (!match) {
     renderLiveMatches();
     renderPastMatches();
@@ -329,7 +362,7 @@ function render() {
     const rival = opponent();
     const free = users.some((u) => u.name === rival && u.status === 'idle');
     // A bot is always free for another game.
-    $('rematch').disabled = botOf(match.snapshot) ? false : !free || Boolean(outgoing);
+    $('rematch').disabled = Boolean(restartNotice) || (botOf(match.snapshot) ? false : !free || Boolean(outgoing));
   }
 }
 
@@ -476,7 +509,7 @@ function renderUsers() {
       el('span', { className: `userStatus ${u.status}`, textContent: status }));
     // Invitations are for the game whose page is open.
     if (route && u.name !== me && u.status === 'idle' && !playing() && !outgoing) {
-      li.append(el('button', { textContent: 'Invite', onclick: () => openInvite(u.name) }));
+      li.append(el('button', { textContent: 'Invite', disabled: Boolean(restartNotice), onclick: () => openInvite(u.name) }));
     }
     return li;
   }));

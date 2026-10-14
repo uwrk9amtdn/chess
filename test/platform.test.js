@@ -371,3 +371,72 @@ test('only the browser parts of a game are served', async (t) => {
   assert.equal(await get('/games/nope/meta.js'), 404);
   assert.equal(await get('/%2e%2e/package.json'), 404);
 });
+
+test('an update: the restart is announced, new games wait, and so does the restart', async (t) => {
+  const server = await startServer({ port: 0, gamesDir, adminToken: 'secret' });
+  t.after(() => server.close());
+  const call = async (method, path, token = 'secret') => {
+    const res = await fetch(`http://localhost:${server.port}${path}`, {
+      method, headers: token ? { authorization: `Bearer ${token}` } : {},
+    });
+    return { status: res.status, body: res.headers.get('content-type') === 'application/json' ? await res.json() : null };
+  };
+  // Without the right token the admin interface is not there.
+  assert.equal((await call('GET', '/admin/status', null)).status, 404);
+  assert.equal((await call('GET', '/admin/status', 'wrong')).status, 404);
+  assert.deepEqual((await call('GET', '/admin/status')).body, { restart: null, games: 0, players: 0 });
+  assert.equal((await call('POST', '/admin/restart?in=-1')).status, 400);
+
+  const alice = connect(server.port);
+  const bob = connect(server.port);
+  await Promise.all([alice.opened, bob.opened]);
+  alice.send({ type: 'join', name: 'alice' });
+  bob.send({ type: 'join', name: 'bob' });
+  await alice.next('users', (m) => m.users.length === 2);
+  alice.send({ type: 'invite', to: 'bob', game: 'pick' });
+  const invite = await bob.next('invite');
+  bob.send({ type: 'accept', id: invite.id });
+  await Promise.all([alice.next('match'), bob.next('match')]);
+  // A second invitation, still open when the restart is announced.
+  const carol = connect(server.port);
+  const dave = connect(server.port);
+  await Promise.all([carol.opened, dave.opened]);
+  carol.send({ type: 'join', name: 'carol' });
+  dave.send({ type: 'join', name: 'dave' });
+  await carol.next('users', (m) => m.users.length === 4);
+  carol.send({ type: 'invite', to: 'dave', game: 'pick' });
+  await dave.next('invite');
+
+  // Announced: everyone hears, open invitations close, nothing new starts.
+  let status = (await call('POST', '/admin/restart?in=300')).body;
+  assert.equal(status.games, 1);
+  assert.equal(status.restart.ready, false);
+  assert.ok(status.restart.msLeft > 299_000 && status.restart.msLeft <= 300_000);
+  const notice = await carol.next('restart');
+  assert.ok(notice.msLeft > 299_000);
+  assert.equal(notice.games, 1);
+  assert.equal((await dave.next('inviteClosed')).reason, 'unavailable');
+  carol.send({ type: 'invite', to: 'dave', game: 'pick' });
+  assert.match((await carol.next('error')).message, /restarts for an update/);
+  carol.send({ type: 'bot', game: 'pick', options: {} });
+  assert.match((await carol.next('error')).message, /restarts for an update/);
+  // Someone arriving now is told as well.
+  const erin = connect(server.port);
+  await erin.opened;
+  erin.send({ type: 'join', name: 'erin' });
+  assert.ok((await erin.next('restart')).msLeft > 0);
+
+  // Brought forward, the time is up, but a game is still being played.
+  status = (await call('POST', '/admin/restart?in=0')).body;
+  assert.deepEqual(status.restart, { msLeft: 0, games: 1, ready: false });
+  // When it ends, the restart may go ahead.
+  alice.send({ type: 'action', action: 'claim' });
+  assert.deepEqual(await carol.next('restart', (m) => m.games === 0), { type: 'restart', msLeft: 0, games: 0 });
+  assert.equal((await call('GET', '/admin/status')).body.restart.ready, true);
+
+  // Called off: new games may start again.
+  await call('DELETE', '/admin/restart');
+  assert.equal((await carol.next('restart')).msLeft, null);
+  carol.send({ type: 'invite', to: 'dave', game: 'pick' });
+  assert.equal((await dave.next('invite')).from, 'carol');
+});
