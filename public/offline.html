@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Game Room</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      display: grid;
+      place-content: center;
+      gap: 12px;
+      padding: 16px;
+      background: #edebe9;
+      color: #4d4d4d;
+      font: 15px/1.4 system-ui, sans-serif;
+      text-align: center;
+    }
+    @media (prefers-color-scheme: dark) { body { background: #161512; color: #bababa; } }
+    h1 { margin: 0; font-size: 22px; }
+    p { margin: 0; }
+    button { justify-self: center; font: inherit; padding: 8px 18px; border: 0; border-radius: 6px; background: #629924; color: #fff; }
+  </style>
+</head>
+<body>
+  <h1>You're offline</h1>
+  <p>Game Room needs a connection to play. Check it and try again.</p>
+  <button onclick="location.reload()">Try again</button>
+</body>
+</html>

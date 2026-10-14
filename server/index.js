@@ -27,6 +27,8 @@ const TYPES = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.wasm': 'application/wasm',
+  '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
 };
 
 // Maps a URL path to [directory it must stay inside, path within it].

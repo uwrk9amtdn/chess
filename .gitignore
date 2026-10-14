@@ -1,2 +1,5 @@
 node_modules/
 data/
+# The Android app project and its signing key; see ANDROID.md.
+android/
+*.keystore

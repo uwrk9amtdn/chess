@@ -503,8 +503,15 @@ function currentTheme() {
   return theme in THEMES ? theme : 'light';
 }
 
+// The phone's status bar takes the colour of the bar along the top.
+function matchStatusBar() {
+  const surface = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim();
+  document.querySelector('meta[name="theme-color"]').content = surface;
+}
+
 function setTheme(theme) {
   document.documentElement.dataset.theme = theme;
+  matchStatusBar();
   try {
     localStorage.setItem(THEME_KEY, theme);
   } catch {
@@ -544,5 +551,9 @@ $('themeOpen').addEventListener('click', () => {
   $('themeDialog').showModal();
 });
 $('themeDone').addEventListener('click', () => $('themeDialog').close());
+matchStatusBar();
+
+// Lets the site be installed as an app; see sw.js.
+navigator.serviceWorker?.register('/sw.js').catch(console.error);
 
 connect();
