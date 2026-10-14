@@ -394,7 +394,8 @@ dialog.chessPromotion { width: auto; padding: 12px; }
   .chessMoves .index::after { content: '.'; }
   .chessMoves button { flex: none; padding: 6px 7px; font-size: 15px; }
   .chessNav { grid-area: nav; border-radius: 0 0 var(--radius) var(--radius); }
-  .chessNav button { padding: 8px 0; }
+  .chessNav button { padding: 12px 0; }
+  .chessNav svg { width: 26px; height: 26px; }
   .chessStatus { grid-area: status; padding: 8px 0; border: 0; }
   .chessActions { grid-area: actions; padding: 0; }
 
