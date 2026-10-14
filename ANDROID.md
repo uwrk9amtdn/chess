@@ -11,9 +11,10 @@ The site is ready for it: `public/manifest.webmanifest`, the icons in
 
 ## One-time setup
 
-1. `npm i -g @bubblewrap/cli`
-2. On its first run Bubblewrap offers to download JDK 17 and the Android SDK
-   (1–2 GB). Let it.
+Nothing needs installing: the commands below run Bubblewrap with `npx`, which
+fetches it into npm's cache in your home folder the first time (it asks to
+confirm). On its first run Bubblewrap offers to download JDK 17 and the
+Android SDK (1–2 GB) into `~/.bubblewrap`. Let it.
 
 ## Building the APK
 
@@ -21,8 +22,8 @@ Deploy the site first, then, in this folder:
 
 ```sh
 mkdir android && cd android
-bubblewrap init --manifest https://<your-domain>/manifest.webmanifest
-bubblewrap build
+npx @bubblewrap/cli init --manifest https://<your-domain>/manifest.webmanifest
+npx @bubblewrap/cli build
 ```
 
 `init` asks for a package id (such as `com.yourname.gameroom`) and creates a
@@ -38,7 +39,7 @@ Until the site proves it belongs to the app, the app shows a thin address bar
 at the top. To remove it:
 
 ```sh
-bubblewrap fingerprint generateAssetLinks
+npx @bubblewrap/cli fingerprint generateAssetLinks
 ```
 
 Copy the resulting `assetlinks.json` to `public/.well-known/assetlinks.json`,
@@ -52,4 +53,4 @@ may warn about an app it does not know, which is usual for an APK that is not
 from the Play Store.
 
 To release a new version, raise `appVersionCode` in `android/twa-manifest.json`,
-run `bubblewrap update` and `bubblewrap build` again.
+run `npx @bubblewrap/cli update` and `npx @bubblewrap/cli build` again.
