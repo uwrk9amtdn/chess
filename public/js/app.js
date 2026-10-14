@@ -360,7 +360,8 @@ function render() {
   $('closeMatch').textContent = spectating() && !over ? 'Stop watching' : 'Close';
   if (over && !spectating()) {
     const rival = opponent();
-    const free = users.some((u) => u.name === rival && u.status === 'idle');
+    // Someone playing the computer can still be asked.
+    const free = users.some((u) => u.name === rival && (u.status === 'idle' || u.vsBot));
     // A bot is always free for another game.
     $('rematch').disabled = Boolean(restartNotice) || (botOf(match.snapshot) ? false : !free || Boolean(outgoing));
   }
@@ -501,14 +502,16 @@ function renderUsers() {
   const sorted = [...users].sort((a, b) => (b.name === me) - (a.name === me) || a.name.localeCompare(b.name));
   $('userCount').textContent = users.length;
   $('users').replaceChildren(...sorted.map((u) => {
-    let status = u.game && games.has(u.game) ? `${u.status} · ${games.get(u.game).name}` : u.status;
+    const doing = u.vsBot ? 'playing the computer' : u.status;
+    let status = u.game && games.has(u.game) ? `${doing} · ${games.get(u.game).name}` : doing;
     if (u.name === me) status = `you · ${status}`;
     const li = el('li', {},
       el('span', { className: `dot ${u.status}` }),
       el('span', { className: 'userName', textContent: u.name }),
       el('span', { className: `userStatus ${u.status}`, textContent: status }));
     // Invitations are for the game whose page is open.
-    if (route && u.name !== me && u.status === 'idle' && !playing() && !outgoing) {
+    // Someone playing the computer can be invited too; accepting ends that game.
+    if (route && u.name !== me && (u.status === 'idle' || u.vsBot) && !playing() && !outgoing) {
       li.append(el('button', { textContent: 'Invite', disabled: Boolean(restartNotice), onclick: () => openInvite(u.name) }));
     }
     return li;
@@ -572,8 +575,10 @@ function renderInvites() {
       el('button', { textContent: 'Cancel', onclick: () => send({ type: 'cancel', id: outgoing.id }) })));
   }
   for (const invite of incoming.values()) {
+    // Accepting ends a game against the computer under way.
+    const ends = playing() && botOf(match.snapshot) ? ' Accepting ends your game against the computer.' : '';
     cards.push(el('div', { className: 'invite' },
-      el('p', {}, el('strong', { textContent: invite.from }), ` challenges you to ${describeInvite(invite)}.`),
+      el('p', {}, el('strong', { textContent: invite.from }), ` challenges you to ${describeInvite(invite)}.${ends}`),
       el('button', { className: 'primary', textContent: 'Accept', onclick: () => send({ type: 'accept', id: invite.id }) }),
       el('button', { textContent: 'Decline', onclick: () => send({ type: 'decline', id: invite.id }) })));
   }

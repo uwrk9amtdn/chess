@@ -440,3 +440,41 @@ test('an update: the restart is announced, new games wait, and so does the resta
   carol.send({ type: 'invite', to: 'dave', game: 'pick' });
   assert.equal((await dave.next('invite')).from, 'carol');
 });
+
+test('someone playing the computer can be invited; accepting ends that game', async (t) => {
+  const server = await startServer({ port: 0, gamesDir });
+  t.after(() => server.close());
+  const [alice, bob, carol, dave] = ['alice', 'bob', 'carol', 'dave'].map(() => connect(server.port));
+  await Promise.all([alice, bob, carol, dave].map((c) => c.opened));
+  for (const [c, name] of [[alice, 'alice'], [bob, 'bob'], [carol, 'carol'], [dave, 'dave']]) c.send({ type: 'join', name });
+  await bob.next('users', (m) => m.users.length === 4);
+
+  // Alice plays the computer; Carol and Dave play each other.
+  alice.send({ type: 'bot', game: 'pick', bot: { mood: 'calm' }, seat: 0 });
+  const botGame = (await alice.next('match')).snapshot;
+  carol.send({ type: 'invite', to: 'dave', game: 'pick' });
+  dave.send({ type: 'accept', id: (await dave.next('invite')).id });
+  await carol.next('match');
+  const users = (await bob.next('users', (m) => m.users.filter((u) => u.status === 'busy').length === 3)).users;
+  assert.deepEqual(users.find((u) => u.name === 'alice'), { name: 'alice', status: 'busy', game: 'pick', vsBot: true });
+  assert.equal(users.find((u) => u.name === 'carol').vsBot, undefined);
+
+  // Carol is in a game with a person: still busy. Alice may be asked.
+  bob.send({ type: 'invite', to: 'carol', game: 'pick' });
+  assert.match((await bob.next('error')).message, /busy/);
+  bob.send({ type: 'invite', to: 'alice', game: 'pick' });
+  const invite = await alice.next('invite');
+  // Someone in a game cannot send invitations, even against the computer.
+  alice.send({ type: 'invite', to: 'bob', game: 'pick' });
+  assert.match((await alice.next('error')).message, /already in a game/);
+
+  // Accepting: the game against the computer ends as left, and the new one starts.
+  alice.send({ type: 'accept', id: invite.id });
+  const ended = (await alice.next('match', (m) => m.snapshot.id === botGame.id && m.snapshot.over)).snapshot;
+  assert.deepEqual(ended.over, { reason: 'abandoned', winner: 1 });
+  const next = (await alice.next('match', (m) => m.snapshot.id !== botGame.id)).snapshot;
+  assert.deepEqual(next.players.slice().sort(), ['alice', 'bob']);
+  assert.deepEqual(next.bots, [null, null]);
+  bob.send({ type: 'history', game: 'pick' });
+  assert.ok((await bob.next('history')).games.some((g) => g.id === botGame.id));
+});

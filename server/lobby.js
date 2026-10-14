@@ -21,6 +21,10 @@ const CHAT_LOG_SIZE = 100;
 const PREVIEW_LIMIT = 12;
 const PAUSED = 'The server restarts for an update in a few minutes, so no new games start until then.';
 
+// Whether a user's match is against the computer: then a person may still
+// invite them, and accepting ends that match.
+const againstBot = (user) => Boolean(user.match && user.botSeat !== null);
+
 export class Lobby {
   // `games` is the Map from loadGames and `archive` is where finished matches
   // go. `stats` hears what happens, for the admin panel (see stats.js).
@@ -131,6 +135,8 @@ export class Lobby {
       name: u.name,
       status: u.match ? 'busy' : 'idle',
       game: u.match ? u.gameId : null,
+      // Playing the computer, which an invitation from a person may end.
+      ...(againstBot(u) ? { vsBot: true } : {}),
     }));
     for (const u of this.users.values()) this.send(u, { type: 'users', users });
   }
@@ -287,7 +293,7 @@ export class Lobby {
     if (!to || to === from) return fail('That player is not available.');
     if (this.restart) return fail(PAUSED);
     if (from.match) return fail('You are already in a game.');
-    if (to.match) return fail(`${to.name} is busy.`);
+    if (to.match && !againstBot(to)) return fail(`${to.name} is busy.`);
     if ([...this.invites.values()].some((i) => i.from === from)) {
       return fail('You already have an invitation waiting.');
     }
@@ -333,7 +339,9 @@ export class Lobby {
       return this.send(user, { type: 'error', message: PAUSED });
     }
     const { from, to } = invite;
-    if (from.match || to.match) return this.closeInvite(invite, 'unavailable');
+    if (from.match || (to.match && !againstBot(to))) return this.closeInvite(invite, 'unavailable');
+    // Accepting ends the game against the computer, as if left for good.
+    if (to.match) to.match.abandon(to.seat);
     this.closeInvite(invite, 'accepted');
     this.closeInvitesOf(from, 'unavailable');
     this.closeInvitesOf(to, 'unavailable');
