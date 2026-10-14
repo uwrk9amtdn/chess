@@ -79,6 +79,7 @@ const NAV_ICONS = {
   next: 'M7 5v14l10-7z',
   last: 'M16 5h2v14h-2zM4 5v14l10-7z',
 };
+const FLIP_ICON = 'M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3 5 6.99h3V14h2V6.99h3z';
 
 // "3+1" for standard chess, "3+1 Double 16x16" for anything else.
 function describeOptions({ minutes, increment, variant }) {
@@ -325,6 +326,7 @@ function mount(container, ctx) {
     const button = el('button', { type: 'button', title: `${capitalise(name)} move` }, icon(path));
     return [name, button];
   }));
+  const flip = el('button', { type: 'button', title: 'Switch sides', hidden: true }, icon(FLIP_ICON));
   const movesEl = el('div', { className: 'chessMoves' });
   const statusEl = el('div', { className: 'chessStatus' });
   const actionsEl = el('div', { className: 'chessActions' });
@@ -368,7 +370,7 @@ function mount(container, ctx) {
       top.material, top.clock,
       el('div', { className: 'chessCard chessPanel' },
         top.bar, top.player,
-        el('div', { className: 'chessNav' }, nav.first, nav.prev, nav.next, nav.last),
+        el('div', { className: 'chessNav' }, nav.first, nav.prev, nav.next, nav.last, flip),
         movesEl, statusEl, actionsEl,
         bottom.player, bottom.bar),
       bottom.clock, bottom.material),
@@ -434,9 +436,15 @@ function mount(container, ctx) {
   }
 
   // Our own seat is at the bottom; a spectator (`you` is null) sits behind the
-  // first seat. Two players for now, so the other seat is at the top.
+  // first seat, or the second one after switching sides. Two players for now,
+  // so the other seat is at the top.
   const watching = () => game.you === null;
-  const bottomSeat = () => game.you ?? 0;
+  let flipped = false;
+  const bottomSeat = () => game.you ?? (flipped ? 1 : 0);
+  flip.onclick = () => {
+    flipped = !flipped;
+    render();
+  };
   const topSeat = () => game.players.findIndex((_, seat) => seat !== bottomSeat());
 
   // The server sends the moves; replaying them gives every position of the
@@ -591,6 +599,7 @@ function mount(container, ctx) {
     }
     nav.first.disabled = nav.prev.disabled = ply === 0;
     nav.next.disabled = nav.last.disabled = ply === total;
+    flip.hidden = !watching() || Boolean(variant.fixedView);
 
     updateClocks();
     renderActions();
