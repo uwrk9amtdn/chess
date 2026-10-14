@@ -380,7 +380,7 @@ function mount(container, ctx) {
   let lowTimeWarned = null; // id of the game we already beeped for
   let viewPly = null; // the earlier position being looked at, or null for the latest
   let replay = { key: null, states: [] }; // the position after each move of one game
-  let shown = { id: null, ply: 0 }; // what the board showed last
+  let shown = { id: null, ply: 0, takebacks: 0, latest: false }; // what the board showed last
   let chatMessages = [];
   let inHand = null; // the pocket piece picked up to be dropped
   // Plays the other seat when this is a game against a bot.
@@ -528,10 +528,12 @@ function mount(container, ctx) {
       checked: inCheck(state, team) ? kingSquares(state, team) : [],
       marked: markedSquares(variant),
       mode,
-      // One step forward or back slides; a longer jump just appears.
-      animate: shown.id === game.id && Math.abs(ply - shown.ply) <= 1,
+      // One step forward or back slides, as does a takeback from the latest
+      // position; a longer jump just appears.
+      animate: shown.id === game.id && (Math.abs(ply - shown.ply) <= 1
+        || (shown.latest && ply === total && game.takebacks !== shown.takebacks)),
     });
-    shown = { id: game.id, ply };
+    shown = { id: game.id, ply, takebacks: game.takebacks, latest: ply === total };
 
     for (const [where, seat] of [[top, topSeat()], [bottom, bottomSeat()]]) {
       // Who is still connected says nothing once the game is over.
@@ -685,7 +687,9 @@ function mount(container, ctx) {
     });
     // A move can be asked back once we have made one.
     const moved = replay.states.slice(0, game.played.length).some((state) => seatToMove(state) === game.you);
-    if (game.takebackOffer === null) actionsEl.append(button('Takeback', 'offerTakeback', { disabled: !moved }));
+    // A bot grants it at once, so there is no waiting on it to show.
+    const againstBot = Boolean(game.bots?.some(Boolean));
+    if (game.takebackOffer === null || againstBot) actionsEl.append(button('Takeback', 'offerTakeback', { disabled: !moved }));
     else if (game.takebackOffer === game.you) actionsEl.append(el('button', { textContent: 'Takeback proposed', disabled: true }));
     else actionsEl.append(button('Accept takeback', 'acceptTakeback', { className: 'primary' }), button('Decline', 'declineTakeback'));
     if (game.drawOffer === null) actionsEl.append(button('Offer draw', 'offerDraw'));
