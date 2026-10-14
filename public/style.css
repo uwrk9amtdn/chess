@@ -147,7 +147,9 @@ input, select {
   border-right: 1px solid var(--border);
   min-width: 0;
 }
-#me { color: var(--muted); min-height: 1.4em; }
+#meRow { display: flex; align-items: center; gap: 8px; }
+#me { flex: 1; min-width: 0; color: var(--muted); min-height: 1.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#changeName { flex: none; padding: 2px 10px; font-size: 13px; }
 #users { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
 #users li {
   display: flex;

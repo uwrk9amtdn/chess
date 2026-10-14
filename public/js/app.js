@@ -8,6 +8,7 @@ import { play, isMuted, setMuted } from './sounds.js';
 
 const $ = (id) => document.getElementById(id);
 const SESSION_KEY = 'games.session';
+const NAME_KEY = 'games.name';
 const WATCH_KEY = 'games.watching';
 const THEME_KEY = 'games.theme';
 const THEMES = { light: 'Light', dark: 'Dark', sepia: 'Sepia', midnight: 'Midnight' };
@@ -66,6 +67,25 @@ function saveSession(session) {
   }
 }
 
+// The last name used is kept for good, so the next visit signs in with it.
+// Only the name: the token stays with the tab, or two tabs would keep taking
+// the seat from each other.
+function rememberedName() {
+  try {
+    return localStorage.getItem(NAME_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function rememberName(name) {
+  try {
+    localStorage.setItem(NAME_KEY, name);
+  } catch {
+    // The name is then asked for again next time.
+  }
+}
+
 // A spectator's snapshot has no seat: `you` is null.
 const spectating = () => Boolean(match && match.snapshot.you === null);
 // The match being watched is remembered for this tab, like the session, so a
@@ -99,7 +119,11 @@ function connect() {
   ws.onopen = () => {
     $('offline').hidden = true;
     const session = loadSession();
+    const name = renaming ?? rememberedName();
+    renaming = null;
     if (session) send({ type: 'join', ...session });
+    // Should the name be taken, the dialog comes up with it filled in.
+    else if (name) send({ type: 'join', name });
     else showNameDialog();
   };
   ws.onmessage = (e) => {
@@ -107,6 +131,8 @@ function connect() {
     if (handlers[msg.type]) queue = queue.then(() => handlers[msg.type](msg)).catch(console.error);
   };
   ws.onclose = () => {
+    // Changing the name is a new connection on purpose.
+    if (renaming !== null) return connect();
     $('offline').hidden = false;
     setTimeout(connect, RECONNECT_MS);
   };
@@ -122,8 +148,10 @@ const handlers = {
   async joined(msg) {
     me = msg.name;
     saveSession({ name: msg.name, token: msg.token });
+    rememberName(msg.name);
     $('nameDialog').close();
     $('me').textContent = `Signed in as ${me}`;
+    $('changeName').hidden = false;
     games = new Map(msg.games.map((g) => [g.id, g]));
     previewLimit = msg.previewLimit;
     following = null;
@@ -143,6 +171,8 @@ const handlers = {
   },
   joinError(msg) {
     me = null;
+    $('me').textContent = '';
+    $('changeName').hidden = true;
     saveSession(null);
     showNameDialog(msg.message);
   },
@@ -397,18 +427,40 @@ function renderGrid() {
 
 // ---- name ----
 
-function showNameDialog(error = '') {
+// The name a change of name is waiting to sign in with, or null.
+let renaming = null;
+
+// With `changing`, the player is signed in already and may think better of it.
+function showNameDialog(error = '', changing = false) {
   $('nameError').textContent = error;
+  $('nameCancel').hidden = !changing;
+  if (!$('nameInput').value) $('nameInput').value = me ?? rememberedName();
   if (!$('nameDialog').open) $('nameDialog').showModal();
   $('nameInput').focus();
 }
 
 $('nameForm').addEventListener('submit', (e) => {
   e.preventDefault();
-  send({ type: 'join', name: $('nameInput').value });
+  const name = $('nameInput').value.trim();
+  if (me === null) return send({ type: 'join', name });
+  $('nameDialog').close();
+  if (name === me) return;
+  // The server has no renaming: leave and come back under the new name.
+  renaming = name;
+  saveSession(null);
+  ws.close();
 });
-// A name is required, so Escape must not dismiss the dialog.
-$('nameDialog').addEventListener('cancel', (e) => e.preventDefault());
+// Signed out, a name is required, so Escape must not dismiss the dialog.
+$('nameDialog').addEventListener('cancel', (e) => {
+  if (me === null) e.preventDefault();
+});
+$('nameCancel').addEventListener('click', () => $('nameDialog').close());
+$('changeName').addEventListener('click', () => {
+  // Leaving would give up the game.
+  if (playing()) return toast('Finish your game before changing your name.');
+  $('nameInput').value = me;
+  showNameDialog('', true);
+});
 
 // ---- players and invitations ----
 

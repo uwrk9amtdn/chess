@@ -30,7 +30,10 @@
   <aside id="sidebar">
     <button id="closePlayers">Close</button>
     <h1><a href="#/">Game Room</a></h1>
-    <p id="me"></p>
+    <div id="meRow">
+      <p id="me"></p>
+      <button id="changeName" hidden>Change name</button>
+    </div>
     <h2>Players <span id="userCount"></span></h2>
     <ul id="users"></ul>
     <div id="settings">
@@ -85,6 +88,7 @@
       <input id="nameInput" maxlength="16" autocomplete="off" required>
       <p class="formError" id="nameError"></p>
       <button class="primary">Enter</button>
+      <button type="button" id="nameCancel" hidden>Cancel</button>
     </form>
   </dialog>
 

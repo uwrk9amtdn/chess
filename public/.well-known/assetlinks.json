@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "net.serv00.sneed.twa",
+      "sha256_cert_fingerprints": ["61:15:75:5D:63:D9:3B:2B:4C:EE:AA:62:A2:9D:EF:82:01:45:D1:32:27:B6:79:CF:67:74:7B:CF:A2:07:16:16"]
+    }
+  }
+]
