@@ -145,8 +145,9 @@ export class ChessMatch {
     this.finish('abandoned', opposingTeam(this.variant, teamOf(this.variant, seat)));
   }
 
+  // Not against the computer, which has no say in a draw.
   offerDraw(seat) {
-    if (this.over || this.drawOffer !== null) return;
+    if (this.over || this.drawOffer !== null || this.bots.some(Boolean)) return;
     this.drawOffer = seat;
     this.onChange(this);
   }

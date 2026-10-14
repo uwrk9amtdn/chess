@@ -37,6 +37,9 @@ test('bots', () => {
   assert.deepEqual(match.snapshot(0).bots, bots);
   assert.equal(match.handle(0, { action: 'move', from: 12, to: 28 }), null);
   assert.equal(match.handle(1, { action: 'move', from: 52, to: 36, bot: true }), null);
+  // No draw can be offered against the computer.
+  match.handle(0, { action: 'offerDraw' });
+  assert.equal(match.drawOffer, null);
   assert.deepEqual(newMatch().match.snapshot(null).bots, [null, null]);
 });
 

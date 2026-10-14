@@ -4,9 +4,6 @@
 
 // A move is not sent sooner than this, so the bot does not answer in a blink.
 const MIN_DELAY_MS = 400;
-// A draw is only accepted this many moves (by either side) into the game,
-// and only when the bot does not think it is ahead.
-const DRAW_AFTER_PLIES = 30;
 
 // The seat this browser plays for, or null: the bot's seat as seen by the
 // player it faces. Spectators and finished games have nobody to play for.
@@ -26,9 +23,7 @@ export function createBot(ctx) {
   let nextId = 0;
   let game = null;
   let thinking = null; // the position being thought about
-  let answered = null; // the position a draw offer was answered in
   let granted = null; // the position a takeback was granted in
-  let score = 0; // what the bot last thought of its position
   let destroyed = false;
 
   function think(request) {
@@ -66,7 +61,6 @@ export function createBot(ctx) {
     if (destroyed || !game || game.over || keyOf(game) !== key) return;
     // Nor is a move sent that is about to be taken back.
     if (game.takebackOffer !== null) return;
-    score = found.score;
     send({ action: 'move', ...found.move });
   }
 
@@ -79,10 +73,6 @@ export function createBot(ctx) {
         return;
       }
       const key = keyOf(game);
-      if (game.drawOffer !== null && game.drawOffer !== seat && answered !== key) {
-        answered = key;
-        send({ action: game.played.length >= DRAW_AFTER_PLIES && score <= 0 ? 'acceptDraw' : 'declineDraw' });
-      }
       // The player may always have their move back.
       if (game.takebackOffer !== null && game.takebackOffer !== seat) {
         if (granted !== key) {

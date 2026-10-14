@@ -7,8 +7,6 @@ import { createStockfish } from './stockfish.js';
 
 // A move is not sent sooner than this, so the bot does not answer in a blink.
 const MIN_DELAY_MS = 400;
-// A draw is only accepted this many moves (by either side) into the game.
-const DRAW_AFTER_PLIES = 40;
 
 // The search in shared/search.js on its own thread, with the same interface
 // as Stockfish.
@@ -52,9 +50,7 @@ export function createBot(ctx) {
   let thinking = null; // "<id>:<ply>" of the position being thought about
   let sent = null; // the position a move was last sent for
   let retried = null; // the position Stockfish's move was refused in
-  let answered = null; // the position a draw offer was answered in
   let granted = null; // the position a takeback was granted in
-  let score = 0; // what the bot last thought of its position
   let stockfishFailed = false;
   let destroyed = false;
 
@@ -97,7 +93,6 @@ export function createBot(ctx) {
     if (destroyed || !found.move || !game || game.over || keyOf(game) !== key) return;
     // Nor is a move sent that is about to be taken back.
     if (game.takebackOffer !== null) return;
-    score = found.score;
     sent = key;
     send({ action: 'move', ...found.move });
   }
@@ -114,10 +109,6 @@ export function createBot(ctx) {
         return;
       }
       const key = keyOf(game);
-      if (game.drawOffer !== null && game.drawOffer !== seat && answered !== key) {
-        answered = key;
-        send({ action: game.played.length >= DRAW_AFTER_PLIES && score <= 0 ? 'acceptDraw' : 'declineDraw' });
-      }
       // The player may always have their move back.
       if (game.takebackOffer !== null && game.takebackOffer !== seat) {
         if (granted !== key) {

@@ -316,9 +316,12 @@ function mount(container, ctx) {
     if (game.takebackOffer === null || againstBot) actions.append(button('Takeback', 'offerTakeback', { disabled: !moved }));
     else if (game.takebackOffer === game.you) actions.append(el('button', { textContent: 'Takeback proposed', disabled: true }));
     else actions.append(button('Accept takeback', 'acceptTakeback', { className: 'primary' }), button('Decline', 'declineTakeback'));
-    if (game.drawOffer === null) actions.append(button('Offer draw', 'offerDraw'));
-    else if (game.drawOffer === game.you) actions.append(el('button', { textContent: 'Draw offered', disabled: true }));
-    else actions.append(button('Accept draw', 'acceptDraw', { className: 'primary' }), button('Decline', 'declineDraw'));
+    // No draws against the computer.
+    if (!againstBot) {
+      if (game.drawOffer === null) actions.append(button('Offer draw', 'offerDraw'));
+      else if (game.drawOffer === game.you) actions.append(el('button', { textContent: 'Draw offered', disabled: true }));
+      else actions.append(button('Accept draw', 'acceptDraw', { className: 'primary' }), button('Decline', 'declineDraw'));
+    }
     actions.append(el('button', {
       textContent: 'Resign',
       className: 'danger',

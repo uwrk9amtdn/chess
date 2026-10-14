@@ -21,6 +21,11 @@ test('invitation options and bots', () => {
   }
   assert.deepEqual(mill.validateBot({ level: 4, junk: 1 }), { bot: { level: 4 }, name: 'Computer level 4' });
   for (const bad of [{}, { level: 0 }, { level: 9 }, { level: 2.5 }]) assert.ok(mill.validateBot(bad).error);
+  // No draw can be offered against the computer.
+  const vsBot = mill.createMatch({ players: ['me', 'Computer level 4'], options: OPTIONS, bots: [null, { level: 4 }], onChange() {} });
+  vsBot.handle(0, { action: 'offerDraw' });
+  assert.equal(vsBot.drawOffer, null);
+  vsBot.handle(0, { action: 'resign' });
 });
 
 function newMatch(options) {
