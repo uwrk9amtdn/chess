@@ -1,0 +1,330 @@
+/* The kit's screen, setup and stone board (see screen.js, setup.js and
+   stoneboard.js). Colours such as --surface come from the platform's
+   style.css. The layout is the chess screen's, so the games feel the same. */
+
+/* The board's colours until theme.js sets the chosen ones. */
+:root { --kit-wood: #dcb35c; --kit-line: #3d2b14; --kit-black: #1b1b1b; --kit-white: #f7f7f7; }
+.kit { --radius: 8px; }
+
+.kit { display: flex; gap: 16px; justify-content: center; align-items: flex-start; }
+.kitSide { width: 260px; flex: none; display: flex; flex-direction: column; gap: 16px; }
+/* As tall as the page allows under the platform's top bar and header. */
+.kitTable { flex: 1; max-width: calc(100dvh - 150px); min-width: 0; }
+.kitControls { width: 280px; flex: none; display: flex; flex-direction: column; align-self: center; }
+.kitCard { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+
+/* A stone as a small round mark in the text; dashed while its colour is
+   not decided yet. */
+.kitStoneIcon { display: inline-block; width: 12px; height: 12px; border-radius: 50%; flex: none; border: 1px solid var(--text); }
+.kitStoneIcon.b { background: #1b1b1b; }
+.kitStoneIcon.w { background: #f7f7f7; }
+.kitStoneIcon.unknown { border-style: dashed; border-color: var(--muted); }
+
+/* ---- game details and chat ---- */
+
+.kitInfo { padding: 14px 16px; display: grid; gap: 8px; }
+.kitTime { display: flex; align-items: center; gap: 8px; }
+.kitIcon { color: var(--muted); font-size: 18px; line-height: 1; }
+.kitMuted { color: var(--muted); font-size: 13px; }
+.kitNames { display: grid; gap: 2px; }
+.kitNames div { display: flex; align-items: center; gap: 8px; }
+.kitWatchers { color: var(--muted); font-size: 13px; }
+.kitResult { border-top: 1px solid var(--border); padding-top: 8px; text-align: center; }
+
+.kitChat { display: flex; flex-direction: column; min-height: 0; }
+.kitChatHead { display: flex; align-items: center; gap: 12px; padding: 10px 12px; color: var(--muted); }
+.kitChatHead label { flex: 1; display: flex; justify-content: space-between; align-items: center; }
+/* Only a narrow screen puts the chat away, behind a button in the top bar. */
+.kitChatClose { display: none; }
+.kitChatOpen { position: relative; }
+@media (min-width: 861px) {
+  .kitChatOpen { display: none; }
+}
+.kitChatOpen.unread::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #d85000;
+}
+.kitChatHead input { accent-color: var(--accent); width: 18px; height: 18px; margin: 0; }
+.kitChatBody { display: flex; flex-direction: column; border-top: 1px solid var(--border); }
+.kitChatLog { list-style: none; margin: 0; padding: 8px 12px; height: 240px; overflow-y: auto; overflow-wrap: anywhere; }
+.kitChatLog li { padding: 1px 0; }
+.kitChatLog strong { color: var(--muted); font-weight: 600; }
+.kitChat form { display: flex; }
+.kitChat form input { flex: 1; min-width: 0; border-width: 1px 0; border-radius: 0; }
+.kitChatQuick { display: flex; }
+.kitChatQuick button { flex: 1; padding: 4px 0; border: 0; border-right: 1px solid var(--border); border-radius: 0; font-size: 12px; }
+.kitChatQuick button:last-child { border-right: 0; }
+
+/* ---- board ---- */
+
+.kitBoard { aspect-ratio: 1; border-radius: 4px; box-shadow: var(--shadow); overflow: hidden; user-select: none; touch-action: manipulation; }
+.kitBoard svg, .kitThumb svg { display: block; width: 100%; height: 100%; }
+.kitWood { fill: var(--kit-wood); }
+.kitLines, .kitBorder { fill: none; stroke: var(--kit-line); vector-effect: non-scaling-stroke; }
+.kitLines { stroke-width: 1px; }
+.kitBorder { stroke-width: 1.6px; }
+.kitStar { fill: var(--kit-line); }
+.kitCoord { fill: var(--kit-line); opacity: 0.75; font: 600 0.36px 'Noto Sans', system-ui, sans-serif; text-anchor: middle; dominant-baseline: central; }
+
+.kitStone.b { fill: var(--kit-black); }
+.kitStone.w { fill: var(--kit-white); stroke: rgba(0, 0, 0, 0.45); stroke-width: 0.025; }
+.kitStones { filter: drop-shadow(0 0.05px 0.06px rgba(0, 0, 0, 0.45)); }
+.kitStones .kitStone { transition: opacity 0.2s ease; }
+.kitStones .kitStone.fresh { animation: kitPlace 0.15s ease-out; transform-box: fill-box; transform-origin: center; }
+.kitStones .kitStone.gone { opacity: 0; }
+.kitStones .kitStone.dead { opacity: 0.4; }
+@keyframes kitPlace {
+  from { transform: scale(1.15); opacity: 0.6; }
+}
+.kitGhost { opacity: 0.45; pointer-events: none; }
+.kitGhost.pending { opacity: 0.75; }
+.kitLast { fill: none; stroke-width: 0.07; pointer-events: none; }
+.kitLast.b { stroke: #f7f7f7; }
+.kitLast.w { stroke: #1b1b1b; }
+.kitTerritory rect { stroke-width: 0.03; }
+.kitTerritory .b { fill: #1b1b1b; stroke: #f7f7f7; }
+.kitTerritory .w { fill: #f7f7f7; stroke: #1b1b1b; }
+.kitBoard.playing svg, .kitBoard.marking .kitStone { cursor: pointer; }
+
+/* Points the player may not play (Renju's forbidden moves), and the row of
+   stones that won. */
+.kitForbidden path { fill: none; stroke: #c62828; stroke-width: 0.07; stroke-linecap: round; }
+.kitWinLine { stroke: #e53935; stroke-width: 0.12; stroke-linecap: round; opacity: 0.85; pointer-events: none; }
+
+/* A position in a list of games. */
+.kitThumb { aspect-ratio: 1; border-radius: 4px; overflow: hidden; }
+.kitThumb .kitLast { stroke-width: 0.12; }
+
+/* ---- clocks, captures and moves ---- */
+
+.kitClock {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 0 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font: 700 50px/1.25 'Noto Sans', 'Segoe UI', system-ui, sans-serif;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.kitClock .periods { font-size: 0.32em; font-weight: 600; letter-spacing: 0; }
+.kitClock:has(+ .kitPanel) { border-radius: var(--radius) var(--radius) 0 0; }
+.kitPanel + .kitClock { border-radius: 0 0 var(--radius) var(--radius); }
+.kitClock.active { background: var(--active); color: var(--active-text); }
+.kitClock.low { background: var(--danger-soft); color: var(--danger); }
+
+.kitExtra { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 2px 4px; color: var(--muted); font-size: 13px; }
+
+/* The clocks are tabs on this card, so it is square where they join it. */
+.kitPanel { display: flex; flex-direction: column; position: relative; z-index: 1; border-radius: 0 var(--radius) var(--radius) 0; }
+.kitBar { height: 4px; background: var(--surface-2); }
+.kitBar span { display: block; height: 100%; background: var(--accent); }
+.kitPlayer { display: flex; align-items: center; gap: 10px; padding: 8px 14px; font-size: 17px; }
+.kitPlayer .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kitPlayer .dot { border: 2px solid var(--muted); background: none; }
+.kitPlayer .dot.online { border-color: var(--accent); background: var(--accent); }
+
+.kitNav { display: flex; background: var(--surface-2); border-block: 1px solid var(--border); }
+.kitNav button {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  /* They can be held down, which must not select or call up a menu. */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.kitNav svg { width: 20px; height: 20px; fill: var(--muted); }
+.kitNav button:hover:not(:disabled) svg { fill: var(--accent); }
+
+.kitMoves {
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px 1fr 1fr;
+  align-content: start;
+  height: 130px;
+  overflow-y: auto;
+}
+.kitMoves .index { display: grid; place-items: center; background: var(--surface-2); border-right: 1px solid var(--border); color: var(--muted); }
+.kitMoves button { padding: 3px 12px; border: 0; border-radius: 0; background: none; text-align: left; font-size: 16px; }
+.kitMoves button.pass { color: var(--muted); font-style: italic; }
+.kitMoves button:hover { background: var(--accent); color: var(--accent-text); filter: none; }
+.kitMoves button.active { background: var(--selected); color: var(--text); font-weight: 700; }
+
+.kitStatus { padding: 10px 14px; border-top: 1px solid var(--border); text-align: center; color: var(--muted); }
+.kitStatus.over, .kitStatus.detail > span { display: grid; gap: 4px; color: var(--text); }
+.kitStatus strong { font-size: 18px; }
+.kitCountdown { font-variant-numeric: tabular-nums; color: var(--muted); }
+.kitActions { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 14px 10px; }
+.kitActions:empty { display: none; }
+.kitActions button { flex: 1; padding-inline: 8px; white-space: nowrap; }
+
+/* ---- dialogs ---- */
+
+/* The board size, above everything else. */
+.kitTopChoice, .kitChoice { display: flex; gap: 4px; }
+.kitTopChoice { margin-bottom: 12px; }
+/* A few words on the rules chosen, under their row. */
+.kitAbout { margin: 6px 0 12px; }
+.kitChoice button:disabled { opacity: 0.4; }
+.kitTopChoice button, .kitChoice button { flex: 1; }
+.kitTopChoice button.selected, .kitChoice button.selected { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+
+/* The first screen: a grid of time controls. */
+.kitTimes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.kitTimeTile {
+  display: grid;
+  place-content: center;
+  gap: 2px;
+  min-height: 92px;
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  text-align: center;
+  font-size: 16px;
+}
+.kitTimeTile strong { font-size: 26px; font-weight: 300; line-height: 1.1; letter-spacing: 0.04em; }
+.kitTimeTile:hover:not(:disabled) { background: var(--tile-hover); color: var(--text); filter: none; }
+
+/* The game setup behind "Custom". */
+.kitSetup { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.kitSliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px 16px; }
+.kitSliders[hidden] { display: none; }
+.kitSliders label, .kitOpponent label { display: grid; gap: 10px; color: var(--text); }
+.kitSliders strong, .kitOpponent label strong { padding: 2px 6px; border-radius: 4px; background: var(--muted); color: var(--surface); }
+.kitSliders input, .kitOpponent input { width: 100%; padding: 0; border: 0; accent-color: var(--muted); }
+.kitSetupActions { display: flex; gap: 8px; }
+.kitSetupActions .primary { flex: 1; padding: 10px; }
+.kitOpponent { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; margin-bottom: 16px; }
+.kitOpponent label { flex: 1; min-width: 180px; }
+.kitOpponent .kitChoice { flex: none; }
+
+/* Board and stones in the platform's theme menu. */
+.kitThemeOptions { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
+.kitThemeOptions button { display: grid; justify-items: center; gap: 4px; padding: 6px 4px; font-size: 13px; }
+.kitThemeOptions button.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.kitThemeSample { width: 54px; height: 36px; border-radius: 4px; }
+.kitThemeSample .kitStone.w { stroke: rgba(0, 0, 0, 0.45); stroke-width: 0.03; }
+
+@media (max-width: 1100px) {
+  .kit { flex-wrap: wrap; }
+  .kitSide { order: 3; width: 100%; flex-direction: row; align-items: flex-start; }
+  .kitSide > * { flex: 1; min-width: 0; }
+}
+/* Not wide enough for the details on the left as well: they go under the
+   clocks and moves instead, and the board takes the room. */
+@media (min-width: 861px) and (max-aspect-ratio: 3/2) {
+  .kit {
+    display: grid;
+    grid-template-columns: minmax(0, calc(100dvh - 150px)) 280px;
+    grid-template-rows: auto 1fr;
+    grid-template-areas: "table controls" "table side";
+    justify-content: center;
+    align-items: start;
+  }
+  .kitTable { grid-area: table; max-width: none; }
+  .kitControls { grid-area: controls; align-self: start; }
+  .kitSide { grid-area: side; width: auto; flex-direction: column; align-items: stretch; }
+}
+/* A short screen has a smaller board: the clocks and moves beside it shrink
+   too, so they are no taller than it. */
+@media (min-width: 861px) and (max-height: 760px) {
+  .kitClock { font-size: 36px; }
+  .kitMoves { height: 96px; }
+}
+@media (max-width: 860px) {
+  /* One column: the opponent's name and clock on a line above the board,
+     our own below it, then the moves in a single row, and the rest. The
+     panel's parts are laid out one by one, so the card itself is gone. */
+  .kit {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "topPlayer topExtra topClock"
+      "topBar topBar topBar"
+      "table table table"
+      "bottomPlayer bottomExtra bottomClock"
+      "bottomBar bottomBar bottomBar"
+      "moves moves moves"
+      "nav nav nav"
+      "status status status"
+      "actions actions actions"
+      "side side side";
+    gap: 0 8px;
+    align-items: center;
+  }
+  .kitControls, .kitPanel { display: contents; }
+  /* index.js narrows it on a short screen, so the rest fits below. */
+  .kitTable { grid-area: table; justify-self: center; width: 100%; max-width: none; margin: 6px 0; }
+  .kitSide { grid-area: side; flex-direction: column; align-items: stretch; margin-top: 10px; }
+
+  .kitPlayer.top { grid-area: topPlayer; }
+  .kitExtra.top { grid-area: topExtra; }
+  .kit .kitClock.top { grid-area: topClock; }
+  .kitBar.top { grid-area: topBar; }
+  .kitPlayer.bottom { grid-area: bottomPlayer; }
+  .kitExtra.bottom { grid-area: bottomExtra; }
+  .kit .kitClock.bottom { grid-area: bottomClock; }
+  .kitBar.bottom { grid-area: bottomBar; }
+  .kitPlayer { min-width: 0; padding: 4px 2px; font-size: 15px; }
+  .kitExtra { min-height: 0; padding: 0; }
+  .kit .kitClock { align-self: center; justify-self: end; padding: 0 8px; border-radius: 4px; font-size: 24px; line-height: 1.3; }
+  .kit .kitClock .periods { font-size: 11px; }
+  .kitBar { height: 3px; margin-top: 3px; border-radius: 2px; background: var(--border); overflow: hidden; }
+
+  .kitMoves {
+    grid-area: moves;
+    display: flex;
+    align-items: stretch;
+    height: auto;
+    min-height: 34px;
+    margin-top: 8px;
+    border-radius: var(--radius) var(--radius) 0 0;
+    background: var(--surface);
+    overflow: auto hidden;
+    scrollbar-width: none;
+    white-space: nowrap;
+  }
+  .kitMoves .index { display: flex; align-items: center; flex: none; padding-left: 10px; border: 0; background: none; font-size: 13px; }
+  .kitMoves .index::after { content: '.'; }
+  .kitMoves button { flex: none; padding: 6px 7px; font-size: 15px; }
+  .kitNav { grid-area: nav; border-radius: 0 0 var(--radius) var(--radius); }
+  .kitNav button { padding: 12px 0; }
+  .kitNav svg { width: 26px; height: 26px; }
+  .kitStatus { grid-area: status; padding: 8px 0; border: 0; }
+  .kitActions { grid-area: actions; padding: 0; }
+
+  /* The details shrink to a line or two. */
+  .kitInfo { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; padding: 8px 12px; font-size: 13px; }
+  .kitNames { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+  .kitNames div { gap: 5px; }
+  .kitStoneIcon { width: 10px; height: 10px; }
+  .kitWatchers { margin-left: auto; }
+  .kitResult { width: 100%; padding-top: 6px; margin-top: 4px; }
+
+  /* The chat is out of the way until its button opens it over the page. */
+  .kitChat { display: none; }
+  .kit.chatOpen .kitChat { display: flex; position: fixed; inset: 0; z-index: 15; border-radius: 0; }
+  .kit.chatOpen .kitChatBody { flex: 1; min-height: 0; }
+  .kit.chatOpen .kitChatLog { flex: 1; height: auto; }
+  .kitChatClose { display: block; padding: 10px 18px; }
+  /* Big enough for a thumb. */
+  .kitChatHead input { width: 24px; height: 24px; }
+  .kitChat form input { padding: 12px; font-size: 16px; }
+  .kitChatQuick button { padding: 14px 0; font-size: 15px; }
+}

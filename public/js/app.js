@@ -604,9 +604,13 @@ function renderSiteThemes() {
 $('themeOpen').addEventListener('click', () => {
   renderSiteThemes();
   // Games add their own choices, drawn afresh each time the menu opens.
+  // Games that share their choices (Go and Gomoku share a board) share the
+  // function too, and it is drawn once.
   const sections = [];
+  const drawn = new Set();
   for (const client of clients.values()) {
-    if (!client.settings) continue;
+    if (!client.settings || drawn.has(client.settings)) continue;
+    drawn.add(client.settings);
     const section = el('div');
     client.settings(section);
     sections.push(section);

@@ -67,7 +67,7 @@ Default-export an object with:
 | `describeOptions(options)` | A few words for invitation cards, e.g. `3+1`. |
 | `describeResult({ players, options, over })` | Optional. A few words on how a finished match ended, for the list of past matches, e.g. `1-0 • Black resigned`. `over` is the match's `over` value. |
 | `preview(container, preview)` | Optional. Draw the thumbnail that the server's `preview` describes into `container`, as seen from the first seat's side. Called again with a newer preview while a match is being played. |
-| `settings(container)` | Optional. Draw choices about how the game looks (chess offers board colours and piece sets) into `container`, which the platform puts in its theme menu under the site's own themes. Called each time the menu opens; the game applies and remembers a choice itself, at once. |
+| `settings(container)` | Optional. Draw choices about how the game looks (chess offers board colours and piece sets) into `container`, which the platform puts in its theme menu under the site's own themes. Called each time the menu opens; the game applies and remembers a choice itself, at once. Games that share their choices export the same function, and the menu draws it once. |
 | `mount(container, ctx)` | Build the game screen in `container` and return `{ update(snapshot), destroy() }`. `update` is called with every new snapshot, and again with the same one if the server refused an action, so anything shown early can be undone. `snapshot.you` is `null` when the screen is shown to a spectator: draw the match but offer no actions. `destroy` must stop timers and listeners. The returned object may also have `chat(messages)`: it is called with the whole conversation, an array of `{ from, text }`, when the screen opens and after every new message. |
 
 `ctx` provides:
@@ -78,7 +78,9 @@ Default-export an object with:
 - `ctx.sendChat(text)`: says something to the other players of the match (up to 140 characters). The platform keeps the conversation, also after the match is over, and gives it back through the view's `chat`. It plays no sound for a message; that is up to the game.
 - `ctx.toast(text)`: shows a short notice.
 
-Load your own stylesheet from the module, as chess does, and prefix its class names with the game's name. The colour variables defined at the top of `public/style.css` (`--surface`, `--accent`, and so on) are available, and change with the theme the player picks; use them rather than fixed colours so the game fits every theme. Once a match is over the platform shows Rematch and Close above your screen, so the game does not need its own.
+Load your own stylesheet from the module, as chess does, and prefix its class names with the game's name.
+
+A game does not have to build its screen from scratch. `public/js/kit/` (served at `/js/kit/`) has what Go and Gomoku share: `screen.js` lays out the chess-like screen (details and chat, the board, clocks as tabs on a panel with the moves, the step buttons, the status and actions) and handles the chat, stepping through moves and fitting the board on a phone; `setup.js` has the invitation dialog's time grid, choice rows, sliders and bot options; `stoneboard.js` draws a board of lines with stones and turns clicks into moves; `stonetheme.js` is that board's theme and `settings`. Import them by their absolute path (`/js/kit/screen.js`); they are browser-only, so keep them out of `shared/`. The colour variables defined at the top of `public/style.css` (`--surface`, `--accent`, and so on) are available, and change with the theme the player picks; use them rather than fixed colours so the game fits every theme. Once a match is over the platform shows Rematch and Close above your screen, so the game does not need its own.
 
 ## Bots
 

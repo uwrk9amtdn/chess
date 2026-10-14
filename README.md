@@ -1,6 +1,6 @@
 # Game Room
 
-A small site for playing board games in the browser with other people, or against the computer. It comes with chess and its variants, and Go. One Node.js server runs everything: it keeps the list of players, the invitations and every match, and the browsers only draw what it sends them.
+A small site for playing board games in the browser with other people, or against the computer. It comes with chess and its variants, Go and Gomoku. One Node.js server runs everything: it keeps the list of players, the invitations and every match, and the browsers only draw what it sends them.
 
 ## What you can do
 
@@ -9,9 +9,10 @@ A small site for playing board games in the browser with other people, or agains
 - **Time controls:** from 1+0 bullet to 30+20 classical, or a custom one.
 - **Play Go:** on 9x9, 13x13 or 19x19, with 2 to 9 handicap stones if you like, against a person or a computer opponent that runs in your own browser (a Monte-Carlo tree search, at 8 levels). Area scoring with komi 7.5 (0.5 with handicap) and positional superko. After both players pass they mark the dead stones together, starting from the server's guess, and accept the count or resume play.
 - **Go clocks:** Fischer (minutes plus an increment) or byo-yomi (main time, then periods).
-- **During a game:** premoves, takebacks, draw offers, a chat with quick phrases, and stepping back through the moves (Go has takebacks, passing, the chat and stepping back).
+- **Play Gomoku:** five in a row on 15x15 (or 19x19 for Freestyle), by Freestyle, Standard (exactly five) or Renju rules, where Black's forbidden moves are refused and marked on the board. The Swap2 opening can decide the colours. The computer opponent is an alpha-beta search at 8 levels, run in your browser.
+- **During a game:** premoves, takebacks, draw offers, a chat with quick phrases, and stepping back through the moves (Go and Gomoku have takebacks, the chat and stepping back; Go also passing).
 - **Watching:** follow games in progress, or replay finished ones, from either side of the board.
-- **Looks:** four site themes (Light, Dark, Sepia, Midnight); for chess six board colours and eight piece sets, for Go six boards and three kinds of stones, chosen from the ☰ menu.
+- **Looks:** four site themes (Light, Dark, Sepia, Midnight); for chess six board colours and eight piece sets, for Go and Gomoku six boards, three kinds of stones and coordinates on or off, chosen from the ☰ menu.
 - **Phones:** the layout works on phones, and the site can be installed as an app. See [ANDROID.md](ANDROID.md) for building an Android APK.
 
 ## Running it
@@ -47,12 +48,15 @@ This runs the platform's tests in `test/` and each game's tests in `games/<id>/t
 ```
 server/      the Node.js server: static files, the WebSocket lobby, the archive
 public/      the site around the games: page, styles, menu, connection
+  js/kit/    a screen, setup dialog and stone board that games can share
+             (Go and Gomoku use it)
 games/       one folder per game, found by the server at start-up
   chess/
     server/  rules checks and the match itself (never sent to browsers)
     shared/  the chess engine, used by both the server and the browser
     client/  the game screen, board, bot, themes, pieces and sounds
   go/        laid out the same way: the rules, clocks and bot in shared/
+  gomoku/    the same again
 test/        tests of the platform
 ```
 
