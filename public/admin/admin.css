@@ -124,3 +124,14 @@
   .adminTable { display: block; overflow-x: auto; white-space: nowrap; }
   .tile.hero .value { font-size: 40px; }
 }
+
+/* ---- feedback ---- */
+
+.feedbackList { display: grid; gap: 10px; }
+.feedbackItem { background: var(--surface); border-radius: 8px; box-shadow: var(--shadow); padding: 12px 14px; display: grid; gap: 6px; border-left: 3px solid var(--accent); }
+.feedbackItem.read { border-left-color: transparent; opacity: 0.8; }
+.feedbackItem header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 13px; color: var(--muted); }
+.feedbackItem header strong { color: var(--text); font-size: 14px; }
+.feedbackItem .kind { padding: 1px 7px; border-radius: 9px; background: var(--surface-2); color: var(--text); font-size: 12px; }
+.feedbackItem p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.feedbackItem .adminActions button { padding: 3px 10px; font-size: 13px; }

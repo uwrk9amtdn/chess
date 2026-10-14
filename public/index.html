@@ -48,6 +48,7 @@
     <div id="settings">
       <button id="themeOpen">Theme</button>
       <button id="soundToggle"></button>
+      <button id="feedbackOpen">Feedback</button>
     </div>
   </aside>
 
@@ -101,6 +102,24 @@
       <p class="formError" id="nameError"></p>
       <button class="primary">Enter</button>
       <button type="button" id="nameCancel" hidden>Cancel</button>
+    </form>
+  </dialog>
+
+  <dialog id="feedbackDialog">
+    <form id="feedbackForm" method="dialog">
+      <h2>Send feedback</h2>
+      <p class="hint">Found a bug, or have an idea? The site's admin reads every message.</p>
+      <div id="feedbackKinds" class="feedbackKinds" role="radiogroup" aria-label="Kind of feedback">
+        <label><input type="radio" name="kind" value="bug"> Bug</label>
+        <label><input type="radio" name="kind" value="idea" checked> Idea</label>
+        <label><input type="radio" name="kind" value="other"> Other</label>
+      </div>
+      <textarea id="feedbackText" rows="6" maxlength="1000" required aria-label="Your feedback"></textarea>
+      <p class="feedbackFoot"><span id="feedbackCount">0 / 1000</span><span id="feedbackError" class="formError"></span></p>
+      <div class="feedbackButtons">
+        <button type="button" id="feedbackCancel">Cancel</button>
+        <button type="submit" id="feedbackSend" class="primary">Send</button>
+      </div>
     </form>
   </dialog>
 

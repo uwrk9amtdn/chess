@@ -15,6 +15,8 @@ import { loadGames } from './games.js';
 import { Archive } from './archive.js';
 import { Stats } from './stats.js';
 import { createPanel } from './panel.js';
+import { FeedbackBox } from './feedback.js';
+import { origin, proxySettings } from './proxy.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC = path.join(root, 'public');
@@ -138,7 +140,7 @@ function currentVersion() {
 // panel.js. Remaining options go to the Lobby. Port 0 picks a free port.
 export async function startServer({
   port = 9494, gamesDir = GAMES, dataDir = null, adminToken = null,
-  passwordFile = null, stateDir = null, updateScript = null, panelOptions = {}, ...lobbyOptions
+  passwordFile = null, stateDir = null, updateScript = null, panelOptions = {}, feedbackOptions = {}, ...lobbyOptions
 } = {}) {
   const games = await loadGames(gamesDir);
   const archive = new Archive({
@@ -150,8 +152,13 @@ export async function startServer({
   const stats = new Stats({ dir: dataDir, version });
   await stats.load();
   stats.start();
-  const lobby = new Lobby({ games, archive, stats, ...lobbyOptions });
-  const panel = createPanel({ lobby, archive, stats, passwordFile, stateDir, updateScript, version, ...panelOptions });
+  const feedback = new FeedbackBox({ dir: dataDir, ...feedbackOptions });
+  await feedback.load();
+  const lobby = new Lobby({ games, archive, stats, feedback, ...lobbyOptions });
+  const panel = createPanel({
+    lobby, archive, stats, feedback, passwordFile, stateDir, updateScript, version, ...panelOptions,
+  });
+  const proxy = proxySettings(panelOptions);
   const server = http.createServer((req, res) => {
     if (req.url.startsWith('/admin/api/')) {
       panel(req, res).catch((err) => {
@@ -164,7 +171,7 @@ export async function startServer({
     } else serveStatic(req, res, games, gamesDir);
   });
   const wss = new WebSocketServer({ server, maxPayload: 4096 });
-  wss.on('connection', (ws) => lobby.connect(ws));
+  wss.on('connection', (ws, req) => lobby.connect(ws, origin(req, proxy).address));
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(port, () => {
@@ -176,7 +183,7 @@ export async function startServer({
           stats.stop();
         },
         // Resolves once every finished match and the statistics are on disk.
-        saved: () => Promise.all([archive.writing, stats.save()]),
+        saved: () => Promise.all([archive.writing, feedback.writing, stats.save()]),
       });
     });
   });

@@ -275,6 +275,16 @@ const handlers = {
     chat = { id: msg.id, messages: msg.messages };
     showChat();
   },
+  // The server's answer to feedback: thanks, or why not (and how long to wait).
+  feedbackSent(msg) {
+    if (msg.ok) {
+      $('feedbackDialog').close();
+      $('feedbackText').value = '';
+      countFeedback();
+      toast('Thanks for your feedback!');
+    } else $('feedbackError').textContent = msg.error;
+    holdFeedback(msg.retryAfterMs);
+  },
   restart(msg) {
     restartNotice = msg.msLeft === null ? null : { at: performance.now() + msg.msLeft, games: msg.games };
     renderRestart();
@@ -638,6 +648,48 @@ function renderSiteThemes() {
     }, sample, name);
   }));
 }
+
+// ---- feedback ----
+
+let feedbackUntil = 0; // when the server lets us send again
+let feedbackTimer = 0;
+
+function countFeedback() {
+  $('feedbackCount').textContent = `${$('feedbackText').value.length} / 1000`;
+}
+
+// Keeps Send off while the server asks us to wait.
+function holdFeedback(ms) {
+  feedbackUntil = Date.now() + (ms || 0);
+  clearInterval(feedbackTimer);
+  const tick = () => {
+    const left = feedbackUntil - Date.now();
+    $('feedbackSend').disabled = left > 0;
+    $('feedbackSend').textContent = left > 0 ? `Send (${Math.ceil(left / 1000)}s)` : 'Send';
+    if (left <= 0) clearInterval(feedbackTimer);
+  };
+  tick();
+  if (feedbackUntil > Date.now()) feedbackTimer = setInterval(tick, 1000);
+}
+
+$('feedbackOpen').addEventListener('click', () => {
+  $('feedbackError').textContent = '';
+  countFeedback();
+  $('feedbackDialog').showModal();
+  $('feedbackText').focus();
+});
+$('feedbackCancel').addEventListener('click', () => $('feedbackDialog').close());
+$('feedbackText').addEventListener('input', countFeedback);
+$('feedbackForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = $('feedbackText').value.trim();
+  if (!text || $('feedbackSend').disabled) return;
+  $('feedbackError').textContent = '';
+  // Off until the server answers, so a double click sends once.
+  $('feedbackSend').disabled = true;
+  const kind = new FormData($('feedbackForm')).get('kind');
+  send({ type: 'feedback', kind, text, game: route });
+});
 
 $('themeOpen').addEventListener('click', () => {
   renderSiteThemes();

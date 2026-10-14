@@ -192,6 +192,7 @@ function showPanel() {
   stopRefreshing();
   guarded(async () => {
     await loadOverview();
+    await loadFeedback();
     await loadStats();
     await loadRecords();
   });
@@ -241,7 +242,10 @@ async function loadOverview() {
     tile('Watching', number(watching), 'spectators'),
     tile('Up for', duration(o.now - o.startedAt), `since ${when(o.startedAt)}`),
     tile('Memory', `${o.memoryMb} MB`, `${o.heapMb} MB of it JavaScript`),
-    tile('Version', commit, about.join(' ')));
+    tile('Version', commit, about.join(' ')),
+    tile('Feedback', number(o.unreadFeedback), 'unread'));
+  // New feedback since the list was drawn: draw it again.
+  if (shownUnread !== null && o.unreadFeedback !== shownUnread) guarded(loadFeedback);
   const r = o.restart;
   $('restartLine').textContent = !r ? ''
     : r.ready ? 'An update is about to be applied.'
@@ -295,7 +299,8 @@ function scaleOf(max) {
   if (max <= 0) return { top: 4, ticks: [0, 2, 4] };
   const rough = max / 4;
   const power = 10 ** Math.floor(Math.log10(rough));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * power).find((s) => s >= rough);
+  // Everything charted is counted in whole units, so no step below one.
+  const step = Math.max(1, [1, 2, 5, 10].map((m) => m * power).find((s) => s >= rough));
   const top = Math.ceil(max / step) * step;
   const ticks = [];
   for (let v = 0; v <= top + step / 2; v += step) ticks.push(v);
@@ -563,6 +568,44 @@ $('range').append(...RANGES.map((n) => el('button', {
     guarded(loadStats);
   },
 })));
+
+// ---- feedback ----
+
+const KINDS = { bug: 'Bug', idea: 'Idea', other: 'Other' };
+let shownUnread = null; // the unread count when the list was last drawn
+
+async function loadFeedback() {
+  const { messages, unread } = await api('GET', `feedback${$('unreadOnly').checked ? '?unread=1' : ''}`);
+  shownUnread = unread;
+  const items = messages.map((m) => {
+    const toggle = el('button', { textContent: m.read ? 'Mark unread' : 'Mark read' });
+    toggle.onclick = () => guarded(async () => {
+      await api('POST', 'feedback/read', { id: m.id, read: !m.read });
+      await loadFeedback();
+      await loadOverview();
+    });
+    const remove = el('button', { className: 'danger', textContent: 'Delete' });
+    remove.onclick = () => {
+      if (!confirm(`Delete this message from ${m.name}? This cannot be undone.`)) return;
+      guarded(async () => {
+        await api('POST', 'feedback/delete', { id: m.id });
+        await loadFeedback();
+        await loadOverview();
+      });
+    };
+    return el('article', { className: `feedbackItem${m.read ? ' read' : ''}` },
+      el('header', {},
+        el('strong', { textContent: m.name }),
+        el('span', { className: 'kind', textContent: KINDS[m.kind] ?? m.kind }),
+        el('span', { textContent: when(m.at) }),
+        ...(m.game ? [el('span', { textContent: `on the ${nameOf(m.game)} page` })] : [])),
+      el('p', { textContent: m.text }),
+      el('div', { className: 'adminActions' }, toggle, remove));
+  });
+  $('feedbackList').replaceChildren(...(items.length ? items
+    : [el('p', { className: 'empty', textContent: $('unreadOnly').checked ? 'No unread feedback.' : 'No feedback yet.' })]));
+}
+$('unreadOnly').addEventListener('change', () => guarded(loadFeedback));
 
 // ---- game records ----
 

@@ -218,7 +218,17 @@ body.playersOpen { overflow: hidden; }
   background: var(--surface-2);
 }
 #users button { padding: 2px 10px; }
-#settings { display: flex; gap: 8px; margin-top: auto; }
+#settings { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+
+/* ---- feedback ---- */
+
+#feedbackDialog { width: min(460px, calc(100vw - 32px)); }
+#feedbackForm { display: grid; gap: 10px; }
+.feedbackKinds { display: flex; gap: 16px; }
+.feedbackKinds label { display: flex; align-items: center; gap: 6px; }
+#feedbackText { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; }
+.feedbackFoot { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; }
+.feedbackButtons { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* ---- theme menu ---- */
 

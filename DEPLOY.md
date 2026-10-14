@@ -91,7 +91,7 @@ Every check also starts the server if it is not running, so it comes back within
 
 ## The admin panel
 
-`https://<your site>/admin` shows who is online and what is being played, the updates (with buttons to check now, update now or call off a waiting update), statistics per day and per game, the server's health, and the finished games, any of which can be deleted. Set its password once, on the server:
+`https://<your site>/admin` shows the feedback players send (from "Feedback" in the ☰ menu; mark it read or delete it), who is online and what is being played, the updates (with buttons to check now, update now or call off a waiting update), statistics per day and per game, the server's health, and the finished games, any of which can be deleted. Set its password once, on the server:
 
 ```sh
 deploy/game-room set-password
@@ -137,6 +137,8 @@ Per day, kept for good in `data/stats.jsonl` (one small line a day), and per hou
 - players: how many different names joined, the most online at once, connections, players who dropped out mid-game, chat messages (counted, never kept);
 - per game: games started and finished, how many against the bot, their average length, how they ended, the options chosen, and per bot level how often the bot won;
 - the server: starts, updates, errors, the most memory used and the longest the server was held up.
+
+Feedback is kept in `data/feedback.jsonl`: when, who (the name they play under), the kind, the text and the game page it came from. Against floods, a name may send one message a minute and five a day, an address ten a day, and everyone together 200 a day; the same text twice is refused. Addresses are only counted, in memory, for these limits.
 
 Players' names are only used to count today's players, and are forgotten when the day ends. No addresses are recorded, except in the login lines of the server's log.
 

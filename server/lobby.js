@@ -3,10 +3,10 @@
 // invitation's options, to create a match, and forwards the players' actions.
 //
 // Client -> server: join, invite, cancel, accept, decline, bot, action, chat,
-//                   watch, unwatch, follow, unfollow, history, review
+//                   watch, unwatch, follow, unfollow, history, review, feedback
 // Server -> client: joined, joinError, users, matches, invite, inviteSent,
 //                   inviteClosed, match, preview, chat, chatLog, history,
-//                   restart, error
+//                   restart, feedbackSent, error
 
 import { randomUUID } from 'node:crypto';
 import { Archive } from './archive.js';
@@ -27,14 +27,16 @@ const againstBot = (user) => Boolean(user.match && user.botSeat !== null);
 
 export class Lobby {
   // `games` is the Map from loadGames and `archive` is where finished matches
-  // go. `stats` hears what happens, for the admin panel (see stats.js).
+  // go. `stats` hears what happens, for the admin panel (see stats.js), and
+  // `feedback` takes what players send (see feedback.js).
   // `limits` holds per-game overrides
   // passed to validateOptions, keyed by game id; with `graceMs` it lets tests
   // run short games.
-  constructor({ games, archive = new Archive(), stats = null, limits = {}, graceMs = 30_000 }) {
+  constructor({ games, archive = new Archive(), stats = null, feedback = null, limits = {}, graceMs = 30_000 }) {
     this.games = games;
     this.archive = archive;
     this.stats = stats;
+    this.feedback = feedback;
     this.limits = limits;
     this.graceMs = graceMs;
     this.users = new Map(); // lower-cased name -> user
@@ -103,8 +105,9 @@ export class Lobby {
     };
   }
 
-  connect(ws) {
-    const conn = { ws, user: null };
+  // `address` is where the connection comes from, for the feedback limits.
+  connect(ws, address = null) {
+    const conn = { ws, user: null, address };
     this.stats?.connected();
     ws.on('message', (raw) => {
       let msg;
@@ -192,6 +195,7 @@ export class Lobby {
       case 'follow': return this.follow(user, msg.game);
       case 'unfollow': user.following = null; return;
       case 'history': return this.history(user, msg);
+      case 'feedback': return this.sendFeedback(user, conn, msg);
       case 'review':
         this.review(user, msg.id).catch((err) => console.error('Error handling "review":', err));
         return;
@@ -456,6 +460,17 @@ export class Lobby {
     if (count > PREVIEW_LIMIT || !this.refreshPreview(live)) return;
     const msg = { type: 'preview', id: live.match.id, preview: live.preview };
     for (const u of this.users.values()) if (u.following === id) this.send(u, msg);
+  }
+
+  // Feedback for the admin: a kind, the text and the game page it came from.
+  sendFeedback(user, conn, msg) {
+    if (!this.feedback) return this.send(user, { type: 'error', message: 'Feedback cannot be sent here.' });
+    const { error, retryAfterMs } = this.feedback.add({
+      name: user.name, address: conn.address ?? user.key, kind: msg.kind, text: msg.text, game: msg.game,
+    });
+    // How long until the next message is taken, so the page can say so.
+    const wait = error ? retryAfterMs ?? 0 : this.feedback.waitFor(user.name);
+    this.send(user, { type: 'feedbackSent', ok: !error, error: error ?? null, retryAfterMs: wait });
   }
 
   chat(user, text) {

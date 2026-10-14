@@ -22,12 +22,12 @@ import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { verifyPassword, readPasswordHash, LoginGuard, Sessions } from './auth.js';
+import { origin, plain, proxySettings, LOOPBACK } from './proxy.js';
 
 const COOKIE = 'game_room_admin';
 const SESSION_HOURS = 12;
 const MAX_BODY = 10_000;
 const LOG_LINES = 30;
-const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
 function cookieOf(req) {
   for (const part of (req.headers.cookie ?? '').split(';')) {
@@ -35,23 +35,6 @@ function cookieOf(req) {
     if (name === COOKIE) return value.join('=');
   }
   return null;
-}
-
-// An IPv4 address the way Node may write it, "::ffff:1.2.3.4", made plain.
-const plain = (address) => String(address ?? '').replace(/^::ffff:(?=\d+\.)/, '');
-
-// Where a request comes from, and whether it came over HTTPS.
-function origin(req, { proxies, proxyHttps }) {
-  const remote = plain(req.socket.remoteAddress);
-  const realIp = req.headers['x-real-ip'];
-  const forwarded = req.headers['x-forwarded-for'];
-  if (proxies.has(remote) && (realIp || forwarded)) {
-    // The proxy adds the address it saw at the end of X-Forwarded-For.
-    const address = plain(realIp ? String(realIp).trim() : String(forwarded).split(',').pop().trim());
-    const proto = req.headers['x-forwarded-proto'];
-    return { address, https: proto ? proto === 'https' : proxyHttps, viaProxy: true, local: false };
-  }
-  return { address: remote, https: false, viaProxy: false, local: LOOPBACK.has(remote) };
 }
 
 // What the server sees of a request, to help set up the proxy settings.
@@ -90,12 +73,12 @@ async function tail(file, lines) {
 // and the update buttons. `version` describes the code running. `proxies`
 // and `proxyHttps` describe the HTTPS proxy in front, as above.
 export function createPanel({
-  lobby, archive, stats, passwordFile = null, stateDir = null, updateScript = null, version = null,
-  proxies = [...LOOPBACK], proxyHttps = false,
+  lobby, archive, stats, feedback = null, passwordFile = null, stateDir = null, updateScript = null, version = null,
+  proxies = LOOPBACK, proxyHttps = false,
   now = Date.now, guard = new LoginGuard({ now }), sessions = new Sessions({ now }),
 }) {
   const startedAt = now();
-  const proxy = { proxies: new Set(proxies.map(plain)), proxyHttps };
+  const proxy = proxySettings({ proxies, proxyHttps });
 
   const send = (res, status, body, headers = {}) => {
     res.writeHead(status, {
@@ -174,6 +157,7 @@ export function createPanel({
       version,
       // Every game, in a fixed order, so that each keeps its colour.
       games: [...lobby.games.values()].map((g) => ({ id: g.meta.id, name: g.meta.name })),
+      unreadFeedback: feedback ? feedback.unread() : 0,
       memoryMb: Math.round(memory.rss / 2 ** 20),
       heapMb: Math.round(memory.heapUsed / 2 ** 20),
       players,
@@ -207,6 +191,14 @@ export function createPanel({
       const done = typeof body.id === 'string' && await archive.delete(body.id);
       if (!done) return send(res, 404, { error: 'No such game.' });
       log(`deleted game ${body.id}`, from);
+      return send(res, 200, { ok: true });
+    }
+    if (pathname === '/admin/api/feedback/read' || pathname === '/admin/api/feedback/delete') {
+      const done = feedback && typeof body.id === 'string' && (pathname.endsWith('read')
+        ? await feedback.markRead(body.id, body.read !== false)
+        : await feedback.delete(body.id));
+      if (!done) return send(res, 404, { error: 'No such message.' });
+      if (pathname.endsWith('delete')) log(`deleted feedback ${body.id}`, from);
       return send(res, 200, { ok: true });
     }
     if (pathname === '/admin/api/update') {
@@ -260,6 +252,13 @@ export function createPanel({
       if (url.pathname === '/admin/api/stats') {
         const days = Math.min(3660, Math.max(1, Number(url.searchParams.get('days')) || 30));
         return send(res, 200, { days: stats.days(days), hours: stats.lastHours() });
+      }
+      if (url.pathname === '/admin/api/feedback') {
+        const unread = url.searchParams.get('unread') === '1';
+        return send(res, 200, {
+          messages: feedback ? feedback.list({ unread }) : [],
+          unread: feedback ? feedback.unread() : 0,
+        });
       }
       if (url.pathname === '/admin/api/records') {
         const game = url.searchParams.get('game');
