@@ -113,7 +113,7 @@ async function start() {
   if (session.loggedIn) return showPanel();
   showSeen(session.seen);
   if (!session.passwordSet) {
-    showLogin('No admin password is set yet. Set one on the server with: deploy/game-room set-password');
+    showLogin(session.noPassword);
     $('loginButton').disabled = true;
     return;
   }

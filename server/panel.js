@@ -107,6 +107,12 @@ export function createPanel({
     res.end(JSON.stringify(body));
   };
 
+  // Why nobody can log in yet: the server was not told where the password
+  // is kept (started by an older deploy/game-room), or none has been set.
+  const noPassword = () => (passwordFile
+    ? 'No admin password is set yet. Set one on the server with: deploy/game-room set-password'
+    : 'The server was not told where the admin password is kept. Restart it with: deploy/game-room restart');
+
   const log = (text, from) => console.log(`${new Date(now()).toISOString()} admin: ${text} (${from.address})`);
 
   // Requests that change something must be JSON sent from the panel itself.
@@ -123,7 +129,7 @@ export function createPanel({
 
   async function login(req, res, from) {
     const hash = await readPasswordHash(passwordFile);
-    if (!hash) return send(res, 409, { error: 'No admin password is set. Set one on the server with: deploy/game-room set-password' });
+    if (!hash) return send(res, 409, { error: noPassword() });
     if (!from.https && !from.local) return send(res, 403, { error: 'Log in over HTTPS.' });
     const wait = guard.waitFor(from.address);
     if (wait) return send(res, 429, { error: 'Too many wrong passwords.', retryAfterMs: wait }, { 'Retry-After': String(Math.ceil(wait / 1000)) });
@@ -233,6 +239,7 @@ export function createPanel({
       return send(res, 200, {
         loggedIn: Boolean(session),
         passwordSet: Boolean(hash),
+        ...(hash ? {} : { noPassword: noPassword() }),
         https: allowed,
         retryAfterMs: guard.waitFor(from.address),
         seen: seen(req, from),

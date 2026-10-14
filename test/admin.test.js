@@ -205,8 +205,9 @@ test('the admin panel: logging in, what it shows, and what it does', async (t) =
   assert.equal(page.status, 200);
   assert.equal(page.headers.get('x-frame-options'), 'DENY');
 
-  // No password yet: nobody can log in.
-  assert.equal((await request('GET', '/admin/api/session')).body.passwordSet, false);
+  // No password yet: nobody can log in, and the page says how to set one.
+  const none = (await request('GET', '/admin/api/session')).body;
+  assert.deepEqual([none.passwordSet, /set-password/.test(none.noPassword)], [false, true]);
   assert.equal((await request('POST', '/admin/api/login', { body: { password: 'x' } })).status, 409);
   await writeFile(passwordFile, await hashPassword('the right password'));
   const { seen: _, ...session } = (await request('GET', '/admin/api/session')).body;
@@ -311,6 +312,13 @@ test('a proxy that sends only X-Real-IP, from an address of its own, vouched for
   let server = await start({ proxies: ['192.0.2.1'], proxyHttps: true });
   let seen = await session(server, { 'x-real-ip': '203.0.113.5' });
   assert.deepEqual(seen.takenAs, { address: '127.0.0.1', https: true, throughProxy: false });
+
+  // A server not told where the password is kept says to restart it.
+  const told = await (await fetch(`http://127.0.0.1:${server.port}/admin/api/session`)).json();
+  assert.equal(told.passwordSet, true);
+  const unaware = await startServer({ port: 0, gamesDir });
+  t.after(() => unaware.close());
+  assert.match((await (await fetch(`http://127.0.0.1:${unaware.port}/admin/api/session`)).json()).noPassword, /restart/);
 
   // Listed: X-Real-IP is the visitor, and with no X-Forwarded-Proto the
   // proxy's word that it serves only HTTPS is taken.

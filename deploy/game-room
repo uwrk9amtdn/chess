@@ -274,7 +274,10 @@ apply()
 	if ! git diff --quiet "$old" "$new" -- package.json package-lock.json; then
 		npm ci --no-audit --no-fund >/dev/null 2>&1 || log "npm ci failed"
 	fi
-	if start >/dev/null; then
+	# Started by the script as it now is, not by this copy, which the shell
+	# keeps running from the old file: the new server may need settings the
+	# old script did not give.
+	if "$self" start >/dev/null; then
 		log "updated to $(git log -1 --format='%h %s' "$new") and restarted"
 	else
 		log "updated to $(git rev-parse --short "$new") but the server did not start; see $state/server.log"
