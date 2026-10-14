@@ -413,5 +413,9 @@ dialog.chessPromotion { width: auto; padding: 12px; }
   .chess.chatOpen .chessChat { display: flex; position: fixed; inset: 0; z-index: 15; border-radius: 0; }
   .chess.chatOpen .chessChatBody { flex: 1; min-height: 0; }
   .chess.chatOpen .chessChatLog { flex: 1; height: auto; }
-  .chessChatClose { display: block; }
+  .chessChatClose { display: block; padding: 10px 18px; }
+  /* Big enough for a thumb. */
+  .chessChatHead input { width: 24px; height: 24px; }
+  .chessChat form input { padding: 12px; font-size: 16px; }
+  .chessChatQuick button { padding: 14px 0; font-size: 15px; }
 }
