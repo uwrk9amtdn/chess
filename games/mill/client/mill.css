@@ -1,0 +1,21 @@
+/* Mill's board, on top of the kit's wood and stones (public/js/kit/kit.css). */
+
+.millLines { stroke-width: 1.6px; }
+
+/* Pieces are moved with a transform, so a move slides. */
+.millBoard .millPieces .kitStone { transition: transform 0.18s ease, opacity 0.2s ease; }
+.millBoard .millPieces .kitStone.still { transition: opacity 0.2s ease; }
+.millBoard .millPieces .kitStone.millFresh { animation: millFadeIn 0.2s ease-out; }
+@keyframes millFadeIn {
+  from { opacity: 0; }
+}
+
+/* The piece picked up, where it may go, and what a mill may take. */
+.millSelected { fill: none; stroke: var(--accent); stroke-width: 0.08; }
+.millTarget { fill: var(--accent); opacity: 0.6; }
+.millTake { fill: none; stroke: #e53935; stroke-width: 0.08; stroke-dasharray: 0.15 0.1; }
+.millBoard.playing svg { cursor: pointer; }
+
+/* Where the last move came from, and the piece it took. */
+.millFrom { fill: none; stroke: var(--kit-line); stroke-width: 0.05; stroke-dasharray: 0.08 0.08; }
+.millTaken { fill: none; stroke: #e53935; stroke-width: 0.06; opacity: 0.7; }

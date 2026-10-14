@@ -1,5 +1,5 @@
 // The look of a board of lines with stones on them, shared by the games
-// played on one (Go, Gomoku): the wood, the stones and whether the
+// played on one (Go, Gomoku, Mill): the wood, the stones and whether the
 // coordinates are shown, chosen in the platform's theme menu and kept for
 // next time. The colours are CSS variables on the page's root, so a change
 // shows at once on every board, thumbnails included; boards redraw their
@@ -138,6 +138,6 @@ export function settings(container) {
     }, picture, el('span', { textContent: name }));
   }
   render();
-  container.append(el('h3', { textContent: 'Go & Gomoku board' }), boards, el('h3', { textContent: 'Go & Gomoku stones' }), stones,
-    el('h3', { textContent: 'Go & Gomoku coordinates' }), coords);
+  container.append(el('h3', { textContent: 'Go, Gomoku & Mill board' }), boards, el('h3', { textContent: 'Go, Gomoku & Mill stones' }), stones,
+    el('h3', { textContent: 'Go, Gomoku & Mill coordinates' }), coords);
 }
