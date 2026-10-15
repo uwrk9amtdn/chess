@@ -184,7 +184,9 @@
 .kitTopChoice button.selected, .kitChoice button.selected { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 
 /* The first screen: a grid of time controls. */
-.kitTimes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+/* Three equal columns, however wide the text; on a narrow screen the
+   numbers shrink with the grid instead. */
+.kitTimes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; container-type: inline-size; }
 .kitTimeTile {
   display: grid;
   place-content: center;
@@ -198,7 +200,7 @@
   text-align: center;
   font-size: 16px;
 }
-.kitTimeTile strong { font-size: 26px; font-weight: 300; line-height: 1.1; letter-spacing: 0.04em; }
+.kitTimeTile strong { font-size: min(26px, 7.5cqw); font-weight: 300; line-height: 1.1; letter-spacing: 0.04em; }
 .kitTimeTile:hover:not(:disabled) { background: var(--tile-hover); color: var(--text); filter: none; }
 
 /* The game setup behind "Custom". */
