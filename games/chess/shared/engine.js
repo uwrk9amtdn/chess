@@ -550,6 +550,55 @@ export function premoveTargets(state, from) {
   return targets;
 }
 
+// The position as a player waiting for their turn pictures it once a queued
+// move is made: the piece goes where it was sent and takes whatever stands
+// there. A king sent two squares, or onto a rook of its own in Chess960,
+// castles; a pawn with no square left in front of it becomes the first piece
+// on offer. Nothing else changes, not even whose turn it is. This is only for
+// drawing; findMove decides later whether the move can be played.
+export function playPremove(state, { from, to }) {
+  const { variant } = state;
+  const w = variant.width;
+  const h = variant.height;
+  const board = state.board.slice();
+  const p = board[from];
+  const target = board[to];
+  const x = from % w;
+  const y = (from - x) / w;
+  const tx = to % w;
+  const ty = (to - tx) / w;
+  const inside = (cx, cy) => cx >= 0 && cy >= 0 && cx < w && cy < h;
+  board[from] = null;
+
+  if (p.type === 'k' && variant.castling === 'fischer' && target?.type === 'r' && target.seat === p.seat) {
+    const row = from - x;
+    board[to] = null;
+    board[row + (tx > x ? w - 2 : 2)] = { ...p, moved: true };
+    board[row + (tx > x ? w - 3 : 3)] = { ...target, moved: true };
+    return { ...state, board };
+  }
+  if (p.type === 'k' && !p.moved && Math.abs(tx - x) + Math.abs(ty - y) === 2 && (tx === x || ty === y)) {
+    // The rook is the first piece beyond the king's square.
+    const dx = Math.sign(tx - x);
+    const dy = Math.sign(ty - y);
+    let cx = tx + dx;
+    let cy = ty + dy;
+    while (inside(cx, cy) && !board[cy * w + cx]) {
+      cx += dx;
+      cy += dy;
+    }
+    const rook = inside(cx, cy) ? board[cy * w + cx] : null;
+    if (rook && rook.type === 'r' && rook.seat === p.seat && !rook.moved) {
+      board[cy * w + cx] = null;
+      board[(y + dy) * w + x + dx] = { ...rook, moved: true };
+    }
+  }
+  const [fx, fy] = variant.seats[p.seat].forward;
+  const promotes = p.type === 'p' && !inside(tx + fx, ty + fy);
+  board[to] = { ...p, type: promotes ? variant.promotionTypes[0] : p.type, moved: true };
+  return { ...state, board };
+}
+
 // Resolves { from, to, promotion } or { drop, to } to the full legal move, or
 // null.
 export function findMove(state, { from, to, promotion, drop } = {}) {

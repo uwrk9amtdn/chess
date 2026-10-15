@@ -99,6 +99,11 @@
 .chessBoard .sq.capture { background-image: radial-gradient(transparent 79%, rgba(20, 85, 0, 0.3) 80%); }
 .chessBoard.premoving .sq.target { background-image: radial-gradient(rgba(20, 30, 85, 0.5) 19%, transparent 20%); }
 .chessBoard.premoving .sq.capture { background-image: radial-gradient(transparent 79%, rgba(20, 30, 85, 0.2) 80%); }
+/* Squares marked with the right button, over any other highlight. */
+.chessBoard .sq[data-mark="red"] { box-shadow: inset 0 0 0 100vmax rgba(235, 97, 80, 0.8); }
+.chessBoard .sq[data-mark="green"] { box-shadow: inset 0 0 0 100vmax rgba(172, 206, 89, 0.8); }
+.chessBoard .sq[data-mark="blue"] { box-shadow: inset 0 0 0 100vmax rgba(82, 176, 220, 0.8); }
+.chessBoard .sq[data-mark="orange"] { box-shadow: inset 0 0 0 100vmax rgba(255, 170, 0, 0.8); }
 .chessBoard.interactive .sq.own,
 .chessBoard.interactive .sq.target,
 .chessBoard.interactive .sq.capture { cursor: pointer; }
@@ -125,6 +130,9 @@
 .chessPieces .piece.gone { opacity: 0; }
 .chessPieces .piece.dragging { z-index: 10; }
 .chessPieces .piece.still, .chessPieces .piece.dragging { transition: none; }
+
+/* Arrows, over the pieces but under one being dragged. */
+.chessMarks { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; pointer-events: none; }
 
 /* A position in a list of games: the same squares, with the piece drawn on
    the square itself. A square in check gives up its glow for the piece. */

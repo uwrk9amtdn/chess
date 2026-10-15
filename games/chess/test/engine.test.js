@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createGame, legalMoves, legalDrops, applyMove, status, toSan, findMove, fromFEN, premoveTargets, inCheck,
+  createGame, legalMoves, legalDrops, applyMove, status, toSan, findMove, fromFEN, premoveTargets, playPremove, inCheck,
   canWinOnTime,
 } from '../shared/engine.js';
 import {
@@ -175,6 +175,26 @@ test('premove targets follow the geometry of the piece, not the position', () =>
   assert.deepEqual(names('e1'), ['c1', 'd1', 'd2', 'e2', 'f1', 'f2', 'g1']);
   assert.deepEqual(names('g8'), ['e7', 'f6', 'h6']);
   assert.deepEqual(names('e4'), []);
+});
+
+test('queued premoves drawn on the board', () => {
+  const at = (state, name) => state.board[sq(name)];
+  // Several moves in a row, whoever is to move.
+  let state = fromFEN('4k3/1P6/8/8/8/8/8/R3K2R b KQ - 0 1', standard);
+  state = playPremove(state, { from: sq('e1'), to: sq('g1') });
+  assert.equal(at(state, 'g1').type, 'k');
+  assert.equal(at(state, 'f1').type, 'r');
+  assert.equal(at(state, 'h1'), null);
+  state = playPremove(state, { from: sq('b7'), to: sq('b8') });
+  assert.equal(at(state, 'b8').type, 'q');
+  state = playPremove(state, { from: sq('a1'), to: sq('a8') });
+  assert.equal(at(state, 'a8').type, 'r');
+  assert.equal(state.turn, 1);
+  // In Chess960 the king castles by going to its rook.
+  const fischer = playPremove(fromFEN('4k3/8/8/8/8/8/8/1R2K3 w B - 0 1', chess960), { from: sq('e1'), to: sq('b1') });
+  assert.equal(at(fischer, 'c1').type, 'k');
+  assert.equal(at(fischer, 'd1').type, 'r');
+  assert.equal(at(fischer, 'b1'), null);
 });
 
 // ---- variants ----
