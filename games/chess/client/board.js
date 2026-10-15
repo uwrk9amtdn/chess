@@ -350,8 +350,10 @@ export function createBoard(root, { onMove, choosePromotion, onDropSelected = ()
       select(null);
       return;
     }
-    select(idx);
-    drag = { id: e.pointerId, el: pieces.get(idx).el, idx, x: e.clientX, y: e.clientY, moved: false };
+    // A piece pressed again may still be dragged; let go where it was, it is put down.
+    const again = idx === selected;
+    if (!again) select(idx);
+    drag = { id: e.pointerId, el: pieces.get(idx).el, idx, x: e.clientX, y: e.clientY, moved: false, again };
     root.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
@@ -369,9 +371,12 @@ export function createBoard(root, { onMove, choosePromotion, onDropSelected = ()
 
   function endDrag(e) {
     if (!drag || e.pointerId !== drag.id) return;
-    // A press without movement is a click: the piece just stays selected.
+    // A press without movement is a click: the piece stays selected, or is
+    // let go if it already was.
     if (!drag.moved) {
+      const { again } = drag;
       drag = null;
+      if (again) select(null);
       return;
     }
     const sq = e.type === 'pointerup' && document.elementFromPoint(e.clientX, e.clientY)?.closest('.sq');
