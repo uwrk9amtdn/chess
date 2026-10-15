@@ -3,7 +3,9 @@
 // coordinates are shown, chosen in the platform's theme menu and kept for
 // next time. The colours are CSS variables on the page's root, so a change
 // shows at once on every board, thumbnails included; boards redraw their
-// coordinates when they hear THEME_EVENT.
+// coordinates when they hear THEME_EVENT. The root also names the board and
+// stones (data-kit-board, data-kit-stones) for looks that take more than
+// colours, such as the glass board.
 //
 // Every game using it exports the same `settings`, and the platform draws a
 // settings function only once, so the menu has one set of these choices.
@@ -23,6 +25,8 @@ export const BOARDS = {
   green: { name: 'Green', wood: '#a9bf8c', line: '#26331a' },
   blue: { name: 'Blue', wood: '#adbfcc', line: '#1f2c36' },
   grey: { name: 'Grey', wood: '#c9c9c9', line: '#2e2e2e' },
+  // Smoked and see-through, for the platform's Glass theme; kit.css frosts it.
+  glass: { name: 'Glass', wood: 'rgba(20, 24, 36, 0.28)', line: 'rgba(255, 255, 255, 0.85)' },
 };
 
 // How the stones are filled: a gradient from the shared definitions below,
@@ -31,6 +35,7 @@ export const STONES = {
   shaded: { name: 'Shaded', black: 'url(#kit-shaded-b)', white: 'url(#kit-shaded-w)' },
   slate: { name: 'Slate', black: 'url(#kit-slate-b)', white: 'url(#kit-slate-w)' },
   flat: { name: 'Flat', black: '#1b1b1b', white: '#f7f7f7' },
+  glass: { name: 'Glass', black: 'url(#kit-glass-b)', white: 'url(#kit-glass-w)' },
 };
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -52,6 +57,12 @@ defs.innerHTML = `<defs>
   <radialGradient id="kit-slate-w" cx="0.45" cy="0.4" r="0.7">
     <stop offset="0" stop-color="#fdfaf2"/><stop offset="1" stop-color="#ddd5c2"/>
   </radialGradient>
+  <linearGradient id="kit-glass-b" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#3a3f5c" stop-opacity="0.85"/><stop offset="0.55" stop-color="#10121e" stop-opacity="0.65"/><stop offset="1" stop-color="#05060c" stop-opacity="0.9"/>
+  </linearGradient>
+  <linearGradient id="kit-glass-w" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#fff" stop-opacity="0.95"/><stop offset="0.55" stop-color="#fff" stop-opacity="0.55"/><stop offset="1" stop-color="#dfe8ff" stop-opacity="0.75"/>
+  </linearGradient>
 </defs>`;
 document.body.append(defs);
 
@@ -62,6 +73,8 @@ if (saved.stones in STONES) theme.stones = saved.stones;
 if (typeof saved.coords === 'boolean') theme.coords = saved.coords;
 
 function apply() {
+  document.documentElement.dataset.kitBoard = theme.board;
+  document.documentElement.dataset.kitStones = theme.stones;
   const root = document.documentElement.style;
   const board = BOARDS[theme.board];
   const stones = STONES[theme.stones];

@@ -214,6 +214,36 @@
 .kitOpponent label { flex: 1; min-width: 180px; }
 .kitOpponent .kitChoice { flex: none; }
 
+/* ---- glass ---- */
+
+/* Under the platform's Glass theme the cards are frosted like its own;
+   --glass is unset in the other themes, where this comes to nothing. */
+.kitCard, .kitClock {
+  -webkit-backdrop-filter: var(--glass);
+  backdrop-filter: var(--glass);
+}
+/* The glass board frosts whatever is behind it, in any theme, and has a
+   bright rim drawn over its edge. */
+[data-kit-board="glass"] .kitBoard {
+  position: relative;
+  border-radius: 12px;
+  -webkit-backdrop-filter: var(--glass, blur(22px) saturate(170%));
+  backdrop-filter: var(--glass, blur(22px) saturate(170%));
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+}
+[data-kit-board="glass"] .kitBoard::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45), inset 0 1px 2px rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+}
+[data-kit-board="glass"] .kitThumb { border-radius: 8px; }
+/* See-through stones are edged in light, as the glass chess pieces are. */
+[data-kit-stones="glass"] :is(.kitBoard, .kitThumb) .kitStone.w { stroke: #fff; stroke-opacity: 0.9; }
+[data-kit-stones="glass"] :is(.kitBoard, .kitThumb) .kitStone.b { stroke: #bec8ff; stroke-opacity: 0.6; stroke-width: 0.025; }
+
 /* Board and stones in the platform's theme menu. */
 .kitThemeOptions { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
 .kitThemeOptions button { display: grid; justify-items: center; gap: 4px; padding: 6px 4px; font-size: 13px; }
@@ -296,6 +326,8 @@
     margin-top: 8px;
     border-radius: var(--radius) var(--radius) 0 0;
     background: var(--surface);
+    -webkit-backdrop-filter: var(--glass);
+    backdrop-filter: var(--glass);
     overflow: auto hidden;
     scrollbar-width: none;
     white-space: nowrap;
@@ -304,6 +336,8 @@
   .kitMoves .index::after { content: '.'; }
   .kitMoves button { flex: none; padding: 6px 7px; font-size: 15px; }
   .kitNav { grid-area: nav; border-radius: 0 0 var(--radius) var(--radius); }
+  /* Out of its card here, so under glass it needs a glass of its own. */
+  [data-theme="glass"] .kitNav { background: var(--surface); -webkit-backdrop-filter: var(--glass); backdrop-filter: var(--glass); }
   .kitNav button { padding: 12px 0; }
   .kitNav svg { width: 26px; height: 26px; }
   .kitStatus { grid-area: status; padding: 8px 0; border: 0; }
