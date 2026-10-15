@@ -7,6 +7,9 @@ import {
 } from '../shared/engine.js';
 import { variants } from '../shared/variants.js';
 
+// What one press of "+15s" gives the other side.
+export const GIFT_MS = 15_000;
+
 export class ChessMatch {
   // `players` holds one name per seat and `options` is what validateOptions
   // returned. `bots` says, per seat, which level of bot plays it (or null);
@@ -96,6 +99,7 @@ export class ChessMatch {
       case 'offerTakeback': this.offerTakeback(seat); return null;
       case 'acceptTakeback': this.answerTakeback(seat, true); return null;
       case 'declineTakeback': this.answerTakeback(seat, false); return null;
+      case 'giveTime': this.giveTime(seat); return null;
       default: return 'Unknown action';
     }
   }
@@ -161,6 +165,17 @@ export class ChessMatch {
       this.drawOffer = null;
       this.onChange(this);
     }
+  }
+
+  // Adds time to every clock of the other team, running or not. Not against
+  // the computer, which has no use for it.
+  giveTime(seat) {
+    if (this.over || this.bots.some(Boolean)) return;
+    const team = teamOf(this.variant, seat);
+    const theirs = new Set(this.variant.seats.filter((s) => s.team !== team).map((s) => s.clock));
+    for (const c of theirs) this.clocks[c] += GIFT_MS;
+    this.armFlag();
+    this.onChange(this);
   }
 
   // How many moves are left once `seat` has taken its last one back, or null

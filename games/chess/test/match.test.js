@@ -4,6 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import chess from '../server/index.js';
+import { GIFT_MS } from '../server/match.js';
 import { createGame, applyMove, serialize } from '../shared/engine.js';
 import { variants } from '../shared/variants.js';
 import { startServer } from '../../../server/index.js';
@@ -99,6 +100,34 @@ test('draw offers and resignation', () => {
   match.handle(1, { action: 'resign' });
   assert.deepEqual(match.over, { reason: 'resign', winner: 0 });
   assert.match(match.handle(0, { action: 'move', from: 12, to: 28 }), /over/);
+});
+
+test('giving the opponent time', () => {
+  const { match, changes } = newMatch();
+  const before = match.snapshot(0).clocks;
+  // White gives black time while white's own clock runs, then black, on
+  // move, gives white some back.
+  match.handle(0, { action: 'giveTime' });
+  let clocks = changes.at(-1).clocks;
+  assert.ok(Math.abs(clocks[1] - (before[1] + GIFT_MS)) < 50);
+  assert.ok(clocks[0] <= before[0]);
+  match.handle(0, { action: 'move', from: 12, to: 28 });
+  const running = match.snapshot(0).clocks[1];
+  match.handle(1, { action: 'giveTime' });
+  clocks = changes.at(-1).clocks;
+  assert.ok(Math.abs(clocks[0] - (before[0] + 1000 + GIFT_MS)) < 50);
+  assert.ok(Math.abs(clocks[1] - running) < 50);
+
+  // Not against the computer, and not once the game is over.
+  const bot = chess.createMatch({
+    players: ['white', 'Stockfish level 1'], options: { variant: 'standard', minutes: 3, increment: 0 }, bots: [null, { level: 1 }], onChange() {},
+  });
+  bot.handle(0, { action: 'giveTime' });
+  assert.equal(bot.clocks[1], 180_000);
+  match.handle(1, { action: 'resign' });
+  const final = match.snapshot(0).clocks;
+  match.handle(1, { action: 'giveTime' });
+  assert.deepEqual(match.snapshot(0).clocks, final);
 });
 
 test('takebacks', () => {

@@ -738,6 +738,8 @@ function mount(container, ctx) {
       if (game.drawOffer === null) actionsEl.append(button('Offer draw', 'offerDraw'));
       else if (game.drawOffer === game.you) actionsEl.append(el('button', { textContent: 'Draw offered', disabled: true }));
       else actionsEl.append(button('Accept draw', 'acceptDraw', { className: 'primary' }), button('Decline', 'declineDraw'));
+      // As much as GIFT_MS in server/match.js gives.
+      actionsEl.append(button('+15s', 'giveTime', { title: 'Give your opponent 15 seconds' }));
     }
     actionsEl.append(el('button', {
       textContent: 'Resign',
