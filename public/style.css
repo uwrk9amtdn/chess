@@ -91,6 +91,55 @@
   --shadow: 0 2px 2px rgba(0, 0, 0, 0.4), 0 3px 1px -2px rgba(0, 0, 0, 0.4), 0 1px 5px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }
+/* Frosted glass over a picture: the surfaces let it show through, blurred
+   by --glass, which anything drawn on var(--surface) should use as its
+   backdrop-filter. The picture is the one chosen under Background. */
+[data-theme="glass"] {
+  --bg: #20232c;
+  --surface: rgba(24, 26, 36, 0.42);
+  --surface-2: rgba(255, 255, 255, 0.1);
+  --border: rgba(255, 255, 255, 0.24);
+  --text: #f4f4f6;
+  --muted: rgba(255, 255, 255, 0.72);
+  --accent: #6fb52c;
+  --accent-text: #fff;
+  --danger: #ff7a70;
+  --idle: #7fd34a;
+  --busy: #ffb340;
+  --active: rgba(255, 255, 255, 0.3);
+  --active-text: #fff;
+  --danger-soft: rgba(220, 60, 50, 0.45);
+  --selected: rgba(255, 255, 255, 0.22);
+  --link: #9ccbff;
+  --chip: rgba(255, 255, 255, 0.14);
+  --tile-hover: rgba(255, 255, 255, 0.22);
+  --shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 8px 28px rgba(0, 0, 0, 0.3);
+  --glass: blur(22px) saturate(170%);
+  color-scheme: dark;
+}
+:root { --wallpaper: url(/backgrounds/space.webp); }
+[data-wallpaper="mountain"] { --wallpaper: url(/backgrounds/mountain.webp); }
+[data-wallpaper="forest"] { --wallpaper: url(/backgrounds/forest.webp); }
+[data-wallpaper="desert"] { --wallpaper: url(/backgrounds/desert.webp); }
+[data-wallpaper="sea"] { --wallpaper: url(/backgrounds/sea.webp); }
+[data-wallpaper="aurora"] { --wallpaper: url(/backgrounds/aurora.webp); }
+/* A layer of its own rather than the body's background, which phones will
+   not keep still while the page scrolls. Darkened a little so white text
+   reads on bright pictures too. */
+[data-theme="glass"] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.18)), var(--wallpaper) center / cover;
+}
+/* Text may sit straight on the picture, which can be bright. */
+[data-theme="glass"] body { text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45); }
+/* Without --glass, in every other theme, this comes to nothing. */
+#topbar, #sidebar, .gameCard, .matchCard, .invite, .toast, #offline, dialog {
+  -webkit-backdrop-filter: var(--glass);
+  backdrop-filter: var(--glass);
+}
 
 * { box-sizing: border-box; }
 
@@ -130,6 +179,9 @@ button:active:not(:disabled) { filter: brightness(0.9); }
 button:disabled { opacity: 0.5; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 button.danger { border-color: var(--danger); color: var(--danger); }
+/* Buttons too, so under glass they are of the darker glass. Kept as weak as
+   a plain `button`, so every other button rule still wins. */
+:where([data-theme="glass"]) button { background-color: var(--surface); }
 
 input, select {
   font: inherit;
@@ -241,6 +293,12 @@ body.playersOpen { overflow: hidden; }
 .themeSample { display: flex; align-items: end; gap: 4px; height: 36px; padding: 6px; border-radius: 4px; background: var(--bg); }
 .themeSample span { flex: 1; height: 100%; border-radius: 3px; background: var(--surface); }
 .themeSample span + span { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+.themeSample[data-theme="glass"] { background: url(/backgrounds/space-small.webp) center / cover; }
+.themeSample[data-theme="glass"] span:first-child { border: 1px solid var(--border); backdrop-filter: var(--glass); }
+#wallpapers { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+#wallpapers button { display: grid; gap: 6px; padding: 8px; text-align: left; }
+#wallpapers button.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.wallpaperSample { height: 56px; border-radius: 4px; background: center / cover; }
 #themeDone { display: block; margin: 16px 0 0 auto; }
 .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 .dot.idle { background: var(--idle); }

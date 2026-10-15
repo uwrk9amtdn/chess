@@ -11,7 +11,10 @@ const SESSION_KEY = 'games.session';
 const NAME_KEY = 'games.name';
 const WATCH_KEY = 'games.watching';
 const THEME_KEY = 'games.theme';
-const THEMES = { light: 'Light', dark: 'Dark', sepia: 'Sepia', midnight: 'Midnight' };
+const THEMES = { light: 'Light', dark: 'Dark', sepia: 'Sepia', midnight: 'Midnight', glass: 'Glass' };
+// The pictures behind the Glass theme, in public/backgrounds.
+const WALLPAPER_KEY = 'games.wallpaper';
+const WALLPAPERS = { space: 'Space', mountain: 'Mountain', forest: 'Forest', desert: 'Desert', sea: 'Sea', aurora: 'Aurora' };
 const RECONNECT_MS = 1000;
 const TOAST_MS = 4000;
 let ws = null;
@@ -635,6 +638,39 @@ function setTheme(theme) {
   }
 }
 
+function currentWallpaper() {
+  const wallpaper = document.documentElement.dataset.wallpaper;
+  return wallpaper in WALLPAPERS ? wallpaper : 'space';
+}
+
+function setWallpaper(wallpaper) {
+  document.documentElement.dataset.wallpaper = wallpaper;
+  try {
+    localStorage.setItem(WALLPAPER_KEY, wallpaper);
+  } catch {
+    // The choice then lasts until the page closes.
+  }
+}
+
+// Only the Glass theme shows a picture, so only it offers a choice of one.
+function renderWallpapers() {
+  $('wallpaperPick').hidden = currentTheme() !== 'glass';
+  $('wallpapers').replaceChildren(...Object.entries(WALLPAPERS).map(([id, name]) => {
+    const selected = id === currentWallpaper();
+    const sample = el('span', { className: 'wallpaperSample' });
+    sample.style.backgroundImage = `url(/backgrounds/${id}-small.webp)`;
+    return el('button', {
+      type: 'button',
+      className: selected ? 'selected' : '',
+      ariaPressed: String(selected),
+      onclick: () => {
+        setWallpaper(id);
+        renderWallpapers();
+      },
+    }, sample, name);
+  }));
+}
+
 function renderSiteThemes() {
   $('siteThemes').replaceChildren(...Object.entries(THEMES).map(([id, name]) => {
     const selected = id === currentTheme();
@@ -648,6 +684,7 @@ function renderSiteThemes() {
       onclick: () => {
         setTheme(id);
         renderSiteThemes();
+        renderWallpapers();
       },
     }, sample, name);
   }));
@@ -697,6 +734,7 @@ $('feedbackForm').addEventListener('submit', (e) => {
 
 $('themeOpen').addEventListener('click', () => {
   renderSiteThemes();
+  renderWallpapers();
   // Games add their own choices, drawn afresh each time the menu opens.
   // Games that share their choices (Go and Gomoku share a board) share the
   // function too, and it is drawn once.

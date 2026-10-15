@@ -334,6 +334,36 @@
   .chessBadges { justify-content: center; order: -1; }
 }
 
+/* ---- glass ---- */
+
+/* Under the platform's Glass theme the cards are frosted like its own;
+   --glass is unset in the other themes, where this comes to nothing. */
+.chessCard, .chessClock, .chessPocket, .chessVariants {
+  -webkit-backdrop-filter: var(--glass);
+  backdrop-filter: var(--glass);
+}
+/* The glass board frosts whatever is behind it, in any theme, and has a
+   bright rim drawn over its edge. */
+[data-chess-board="glass"] .chessBoard {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  -webkit-backdrop-filter: var(--glass, blur(22px) saturate(170%));
+  backdrop-filter: var(--glass, blur(22px) saturate(170%));
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+}
+[data-chess-board="glass"] .chessBoard::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45), inset 0 1px 2px rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+}
+/* The squares are too faint to colour the letters: white on both. */
+[data-chess-board="glass"] .chessBoard .sq .coord { color: rgba(255, 255, 255, 0.85); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45); }
+/* See-through pieces need a shadow to stand off the squares. */
+[data-chess-pieces="glass"] .chessPieces .piece { filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35)); }
+
 /* Board and pieces in the platform's theme menu. */
 .chessThemeOptions { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
 .chessThemeOptions button { display: grid; justify-items: center; gap: 4px; padding: 6px 4px; font-size: 13px; }
@@ -421,6 +451,8 @@ dialog.chessPromotion { width: auto; padding: 12px; }
     margin-top: 8px;
     border-radius: var(--radius) var(--radius) 0 0;
     background: var(--surface);
+    -webkit-backdrop-filter: var(--glass);
+    backdrop-filter: var(--glass);
     overflow: auto hidden;
     scrollbar-width: none;
     white-space: nowrap;
@@ -429,6 +461,8 @@ dialog.chessPromotion { width: auto; padding: 12px; }
   .chessMoves .index::after { content: '.'; }
   .chessMoves button { flex: none; padding: 6px 7px; font-size: 15px; }
   .chessNav { grid-area: nav; border-radius: 0 0 var(--radius) var(--radius); }
+  /* Out of its card here, so under glass it needs a glass of its own. */
+  [data-theme="glass"] .chessNav { background: var(--surface); -webkit-backdrop-filter: var(--glass); backdrop-filter: var(--glass); }
   .chessNav button { padding: 12px 0; }
   .chessNav svg { width: 26px; height: 26px; }
   .chessStatus { grid-area: status; padding: 8px 0; border: 0; }

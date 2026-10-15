@@ -10,3 +10,4 @@ Each folder is one piece set, taken from [Lichess](https://github.com/lichess-or
 | `fantasy`, `celtic`, `spatial` | [Maurizio Monge](https://github.com/maurimo/chess-art) | [MIT](https://github.com/maurimo/chess-art/blob/main/LICENSE) |
 | `pixel` | therealqtpi | [AGPL v3 or later](https://www.gnu.org/licenses/agpl-3.0.html) |
 | `rhosgfx` | [RhosGFX](https://rhosgfx.itch.io/) | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
+| `glass` | Colin M.L. Burnett; made from `cburnett` for this project, with see-through fills | [GPL v2 or later](https://www.gnu.org/licenses/gpl-2.0.html) |

@@ -15,6 +15,8 @@
     try {
       const theme = localStorage.getItem('games.theme');
       if (theme) document.documentElement.dataset.theme = theme;
+      const wallpaper = localStorage.getItem('games.wallpaper');
+      if (wallpaper) document.documentElement.dataset.wallpaper = wallpaper;
     } catch {}
   </script>
 </head>
@@ -127,6 +129,11 @@
     <h2>Theme</h2>
     <h3>Site</h3>
     <div id="siteThemes"></div>
+    <!-- The picture behind the Glass theme. -->
+    <div id="wallpaperPick" hidden>
+      <h3>Background</h3>
+      <div id="wallpapers"></div>
+    </div>
     <!-- Each game may add choices of its own, such as the look of a board. -->
     <div id="gameThemes"></div>
     <button id="themeDone" class="primary">Done</button>

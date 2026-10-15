@@ -1,6 +1,8 @@
 // The look of the board: its colours and the piece set, chosen in the
 // platform's theme menu and kept for next time. Both are CSS variables on the
 // page's root, so a change shows at once on every board, thumbnails included.
+// The root also names both choices (data-chess-board, data-chess-pieces) for
+// looks that take more than colours, such as the glass board.
 
 const THEME_KEY = 'chess.theme';
 
@@ -12,6 +14,8 @@ export const BOARDS = {
   purple: { name: 'Purple', light: '#9f90b0', dark: '#7d4a8d' },
   grey: { name: 'Grey', light: '#dcdcdc', dark: '#a8a8a8' },
   pink: { name: 'Pink', light: '#f1f1c9', dark: '#f07272' },
+  // See-through, for the platform's Glass theme; chess.css frosts it.
+  glass: { name: 'Glass', light: 'rgba(255, 255, 255, 0.4)', dark: 'rgba(255, 255, 255, 0.1)' },
 };
 
 // One folder of pieces/ each; see pieces/LICENSE.md.
@@ -24,6 +28,7 @@ export const PIECE_SETS = {
   spatial: 'Spatial',
   pixel: 'Pixel',
   rhosgfx: 'Rhosgfx',
+  glass: 'Glass',
 };
 
 const TYPES = ['K', 'Q', 'R', 'B', 'N', 'P'];
@@ -45,6 +50,8 @@ try {
 }
 
 function apply() {
+  document.documentElement.dataset.chessBoard = theme.board;
+  document.documentElement.dataset.chessPieces = theme.pieces;
   const root = document.documentElement.style;
   const board = BOARDS[theme.board];
   root.setProperty('--sq-light', board.light);
