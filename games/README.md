@@ -56,6 +56,8 @@ The match object needs:
 
 Timers a match starts should be `unref()`ed so they never keep the process alive.
 
+A real-time game works the same way, only more often: `games/tanks/` steps its battle on a timer of its own and calls `onChange` after each step, so the players get a snapshot 20 times a second, and actions such as `input` come as often. Keep such snapshots small, call `onChange` only when something moved, and keep `preview` to what changes seldom (Tanks sends the score and armour, not positions), since every change of it goes to everyone looking at the list.
+
 ## `client/index.js`
 
 Default-export an object with:

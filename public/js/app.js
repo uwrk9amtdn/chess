@@ -250,6 +250,7 @@ const handlers = {
   },
   match(msg) {
     const fresh = !match || match.snapshot.id !== msg.snapshot.id;
+    const ended = Boolean(msg.snapshot.over) && !(match && match.snapshot.over);
     if (fresh && !resuming && !msg.snapshot.over && msg.snapshot.you !== null) play('start');
     if (fresh) showPlayers(false);
     resuming = false;
@@ -266,7 +267,9 @@ const handlers = {
     mounted.view.update(match.snapshot);
     if (chat.id !== msg.snapshot.id) chat = { id: msg.snapshot.id, messages: [] };
     if (fresh || opened) showChat();
-    render();
+    // The page around the game only changes when a match starts or ends; a
+    // real-time game sends many snapshots a second in between.
+    if (fresh || opened || ended) render();
   },
   chat(msg) {
     if (chat.id !== msg.id) chat = { id: msg.id, messages: [] };

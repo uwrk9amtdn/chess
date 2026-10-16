@@ -1,6 +1,6 @@
 # Game Room
 
-A small site for playing board games in the browser with other people, or against the computer. It comes with chess and its variants, Go, Gomoku and Mill. One Node.js server runs everything: it keeps the list of players, the invitations and every match, and the browsers only draw what it sends them.
+A small site for playing board games in the browser with other people, or against the computer. It comes with chess and its variants, Go, Gomoku and Mill, and one real-time game, Tanks. One Node.js server runs everything: it keeps the list of players, the invitations and every match, and the browsers only draw what it sends them.
 
 ## What you can do
 
@@ -11,6 +11,7 @@ A small site for playing board games in the browser with other people, or agains
 - **Go clocks:** Fischer (minutes plus an increment) or byo-yomi (main time, then periods).
 - **Play Gomoku:** five in a row on 15x15 (or 19x19 for Freestyle), by Freestyle, Standard (exactly five) or Renju rules, where Black's forbidden moves are refused and marked on the board. The Swap2 opening can decide the colours. The computer opponent is an alpha-beta search at 8 levels, run in your browser.
 - **Play Mill:** Nine Men's Morris, or its Six and Twelve Men's cousins (the last with diagonals). Pieces fly once a player is down to three. Threefold repetition, fifty moves each without a mill, and a board filled in Twelve Men's are draws, and draws can be offered. The computer opponent is an alpha-beta search at 8 levels, run in your browser.
+- **Play Tanks:** a real-time duel in an arena of walls, the best of 1, 3 or 5 rounds. Drive with WASD or the arrows, aim with the mouse and fire with a click or Space; on a phone, touch the left half of the arena to drive and the right half to aim and fire. Shells ricochet off one wall, and three hits put a tank out. A round lasts two minutes at most, and the battle pauses while a player is away. The computer opponent, at 8 levels, finds its way round the walls, leads its shots, tries ricochets and dodges, and runs in your browser.
 - **During a game:** premoves (as many as you like, shown on the board), arrows and marked squares with the right mouse button, takebacks, draw offers, a chat with quick phrases, and stepping back through the moves (Go, Gomoku and Mill have takebacks, the chat and stepping back; Go also passing, Mill also draw offers).
 - **Watching:** follow games in progress, or replay finished ones, from either side of the board.
 - **Looks:** five site themes (Light, Dark, Sepia, Midnight, and Glass, frosted over a choice of six pictures); for chess seven boards and nine piece sets, for Go, Gomoku and Mill seven boards, four kinds of stones and coordinates on or off, chosen from the ☰ menu.
@@ -63,6 +64,8 @@ games/       one folder per game, found by the server at start-up
   go/        laid out the same way: the rules, clocks and bot in shared/
   gomoku/    the same again
   mill/      and again, with a board of its own drawn in the kit's look
+  tanks/     a real-time game: the server steps the battle 20 times a second,
+             and the browser draws it on a canvas, moving its own tank ahead
 test/        tests of the platform
 ```
 

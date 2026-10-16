@@ -1,0 +1,64 @@
+/* The tank duel: the arena, and beside it the score, the status and the
+   chat; on a narrow screen they go under it. Built on the kit's cards
+   (kit.css) and the site's colours, so it follows the theme. */
+
+.tanks { --radius: 8px; display: flex; gap: 16px; justify-content: center; align-items: flex-start; }
+/* As wide as there is room for, and no taller than the page under its bars. */
+.tanksMain { flex: 1; min-width: 0; max-width: calc((100dvh - 170px) * 1.6); }
+.tanksSide { width: 280px; flex: none; display: flex; flex-direction: column; gap: 16px; }
+
+.tanksArena {
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+  -webkit-backdrop-filter: var(--glass);
+  backdrop-filter: var(--glass);
+}
+[data-theme="glass"] .tanksArena { background: var(--surface); }
+.tanksCanvas { display: block; width: 100%; height: 100%; user-select: none; -webkit-user-select: none; cursor: crosshair; }
+/* While playing, a finger on the arena steers rather than scrolls the page. */
+.tanksCanvas.controls { touch-action: none; }
+.tanksHelp { margin: 8px 2px 0; text-align: center; }
+
+.tanksBoard { display: grid; gap: 8px; padding: 12px 14px; border-radius: 0; box-shadow: none; background: none; }
+.tanksRow { display: flex; align-items: center; gap: 8px; }
+.tanksSwatch { width: 14px; height: 14px; border-radius: 3px; flex: none; box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.35); }
+.tanksRow .dot { width: 8px; height: 8px; border: 2px solid var(--muted); }
+.tanksRow .dot.online { border-color: var(--accent); background: var(--accent); }
+.tanksName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.tanksPips, .tanksWins { display: flex; gap: 3px; flex: none; }
+.tanksPips i { width: 10px; height: 6px; border-radius: 1px; background: var(--chip); }
+.tanksWins i { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--muted); }
+.tanksWins i.won { border-color: var(--busy); background: var(--busy); }
+
+.tanksInfo { padding: 0 14px 10px; }
+.tanksRounds { margin: 0; padding: 8px 14px 8px 36px; border-top: 1px solid var(--border); font-size: 13px; max-height: 120px; overflow-y: auto; }
+.tanksRounds[hidden] { display: none; }
+.tanksPanel .kitActions { padding-top: 0; }
+.tanksSide .kitChatLog { height: 160px; }
+
+.tanksTiles { margin-top: 4px; }
+
+/* The thumbnail in lists of games. */
+.tanksThumb { display: block; width: 100%; height: auto; border-radius: 4px; background: var(--surface-2); }
+.tanksThumbWall { fill: var(--muted); }
+.tanksThumbScore { font: 700 220px system-ui, sans-serif; stroke: #000; stroke-width: 8px; paint-order: stroke; }
+
+@media (max-width: 1000px) {
+  .tanks { flex-direction: column; align-items: stretch; }
+  /* Still no taller than the screen, for a phone held sideways. */
+  .tanksMain { max-width: calc((100dvh - 110px) * 1.6); width: 100%; margin: 0 auto; }
+  .tanksSide { width: auto; flex-direction: row; align-items: flex-start; }
+  .tanksSide > * { flex: 1; min-width: 0; }
+}
+@media (max-width: 860px) {
+  .tanks { gap: 10px; }
+  .tanksSide { flex-direction: column; align-items: stretch; }
+  /* kit.css puts the chat away on a phone, for its own button; here it
+     simply follows the rest. */
+  .tanksSide .kitChat { display: flex; }
+  .tanksPanel .kitStatus { padding: 8px 14px; border-top: 1px solid var(--border); }
+  .tanksPanel .kitActions { padding: 0 14px 10px; }
+}
